@@ -1,18 +1,19 @@
-@page "/login"
+@page "/register"
 @using PersonalFinance.Client.Auth
 @using PersonalFinance.Client.Sync
 @inject AuthService AuthService
 @inject SyncService SyncService
 @inject NavigationManager Navigation
 
-<PageTitle>Log in</PageTitle>
+<PageTitle>Register</PageTitle>
 
-<h1>Log in</h1>
+<h1>Register</h1>
 
-<EditForm Model="_model" OnValidSubmit="LoginAsync">
+<EditForm Model="_model" OnValidSubmit="RegisterAsync">
+    <input @bind="_model.DisplayName" placeholder="Name" />
     <input @bind="_model.Email" placeholder="Email" type="email" />
-    <input @bind="_model.Password" placeholder="Password" type="password" />
-    <button type="submit" disabled="@_isBusy">Log in</button>
+    <input @bind="_model.Password" placeholder="Password (min 8 characters)" type="password" />
+    <button type="submit" disabled="@_isBusy">Register</button>
 </EditForm>
 
 @if (_error is not null)
@@ -20,19 +21,19 @@
     <p style="color:red">@_error</p>
 }
 
-<p><a href="register">Don't have an account? Register</a></p>
+<p><a href="login">Already have an account? Log in</a></p>
 
 @code {
-    private readonly LoginModel _model = new();
+    private readonly RegisterModel _model = new();
     private string? _error;
     private bool _isBusy;
 
-    private async Task LoginAsync()
+    private async Task RegisterAsync()
     {
         _isBusy = true;
         _error = null;
 
-        var result = await AuthService.LoginAsync(_model.Email, _model.Password);
+        var result = await AuthService.RegisterAsync(_model.Email, _model.Password, _model.DisplayName);
 
         if (!result.Success)
         {
@@ -45,8 +46,9 @@
         Navigation.NavigateTo("/accounts");
     }
 
-    private class LoginModel
+    private class RegisterModel
     {
+        public string DisplayName { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
     }

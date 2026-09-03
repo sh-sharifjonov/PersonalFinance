@@ -21,13 +21,29 @@ public class AuthService
         _jsRuntime = jsRuntime;
     }
 
-    public async Task<LoginResult> LoginAsync(string email, string password)
+    public Task<LoginResult> LoginAsync(string email, string password) =>
+        AuthenticateAsync("api/auth/login", new { email, password });
+
+    public Task<LoginResult> RegisterAsync(string email, string password, string displayName) =>
+        AuthenticateAsync("api/auth/register", new { email, password, displayName });
+
+    public async Task LogoutAsync()
     {
-        var response = await _http.PostAsJsonAsync("api/auth/login", new { email, password });
+        await _jsRuntime.InvokeVoidAsync("localStorage.removeItem", AccessTokenKey);
+    }
+
+    public async Task<string?> GetAccessTokenAsync()
+    {
+        return await _jsRuntime.InvokeAsync<string?>("localStorage.getItem", AccessTokenKey);
+    }
+
+    private async Task<LoginResult> AuthenticateAsync(string requestUri, object payload)
+    {
+        var response = await _http.PostAsJsonAsync(requestUri, payload);
 
         if (!response.IsSuccessStatusCode)
         {
-            return new LoginResult(false, $"Login failed ({(int)response.StatusCode}).");
+            return new LoginResult(false, await ExtractErrorMessageAsync(response));
         }
 
         var result = await response.Content.ReadFromJsonAsync<AuthResponse>();
@@ -40,15 +56,30 @@ public class AuthService
         return new LoginResult(true, null);
     }
 
-    public async Task LogoutAsync()
+    private static async Task<string> ExtractErrorMessageAsync(HttpResponseMessage response)
     {
-        await _jsRuntime.InvokeVoidAsync("localStorage.removeItem", AccessTokenKey);
-    }
+        try
+        {
+            var problem = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+            if (problem?.Errors is { Count: > 0 })
+            {
+                return string.Join(" ", problem.Errors.SelectMany(kv => kv.Value));
+            }
 
-    public async Task<string?> GetAccessTokenAsync()
-    {
-        return await _jsRuntime.InvokeAsync<string?>("localStorage.getItem", AccessTokenKey);
+            if (!string.IsNullOrWhiteSpace(problem?.Title))
+            {
+                return problem.Title;
+            }
+        }
+        catch
+        {
+            // Response body wasn't the JSON shape we expected — fall back below.
+        }
+
+        return $"Request failed ({(int)response.StatusCode}).";
     }
 
     private record AuthResponse(Guid UserId, string Email, string DisplayName, string AccessToken, string RefreshToken, DateTime RefreshTokenExpiresAt);
+
+    private record ErrorResponse(string? Title, Dictionary<string, string[]>? Errors);
 }
