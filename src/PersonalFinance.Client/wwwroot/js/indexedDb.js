@@ -1,6 +1,6 @@
 const DB_NAME = 'personal-finance';
-const DB_VERSION = 1;
-const STORES = ['accounts', 'categories', 'transactions'];
+const DB_VERSION = 2;
+const STORES = ['accounts', 'categories', 'transactions', 'outbox'];
 
 let dbPromise = null;
 

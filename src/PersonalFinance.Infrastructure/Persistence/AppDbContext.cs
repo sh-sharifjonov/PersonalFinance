@@ -39,6 +39,9 @@ public class AppDbContext : DbContext, IAppDbContext
         return base.SaveChanges();
     }
 
+    public Task<int> SaveChangesForSyncAsync(CancellationToken cancellationToken = default) =>
+        base.SaveChangesAsync(cancellationToken);
+
     private void UpdateTimestamps()
     {
         var now = DateTime.UtcNow;

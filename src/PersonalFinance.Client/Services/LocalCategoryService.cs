@@ -1,4 +1,5 @@
 using PersonalFinance.Client.Data;
+using PersonalFinance.Client.Sync;
 using PersonalFinance.Domain.Entities;
 using PersonalFinance.Domain.Enums;
 
@@ -9,10 +10,12 @@ public class LocalCategoryService
     private const string StoreName = "categories";
 
     private readonly IndexedDbService _db;
+    private readonly OutboxService _outbox;
 
-    public LocalCategoryService(IndexedDbService db)
+    public LocalCategoryService(IndexedDbService db, OutboxService outbox)
     {
         _db = db;
+        _outbox = outbox;
     }
 
     public async Task<List<Category>> GetAllAsync()
@@ -32,6 +35,7 @@ public class LocalCategoryService
         };
 
         await _db.PutAsync(StoreName, category);
+        await _outbox.EnqueueAsync(StoreName, category.Id);
         return category;
     }
 
@@ -46,5 +50,6 @@ public class LocalCategoryService
         category.IsDeleted = true;
         category.UpdatedAt = DateTime.UtcNow;
         await _db.PutAsync(StoreName, category);
+        await _outbox.EnqueueAsync(StoreName, category.Id);
     }
 }

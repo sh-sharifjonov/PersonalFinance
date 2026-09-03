@@ -1,4 +1,5 @@
 using PersonalFinance.Client.Data;
+using PersonalFinance.Client.Sync;
 using PersonalFinance.Domain.Entities;
 using PersonalFinance.Domain.Enums;
 
@@ -9,10 +10,12 @@ public class LocalTransactionService
     private const string StoreName = "transactions";
 
     private readonly IndexedDbService _db;
+    private readonly OutboxService _outbox;
 
-    public LocalTransactionService(IndexedDbService db)
+    public LocalTransactionService(IndexedDbService db, OutboxService outbox)
     {
         _db = db;
+        _outbox = outbox;
     }
 
     public async Task<List<Transaction>> GetAllAsync(Guid? accountId = null)
@@ -47,6 +50,7 @@ public class LocalTransactionService
         };
 
         await _db.PutAsync(StoreName, transaction);
+        await _outbox.EnqueueAsync(StoreName, transaction.Id);
         return transaction;
     }
 
@@ -61,5 +65,6 @@ public class LocalTransactionService
         transaction.IsDeleted = true;
         transaction.UpdatedAt = DateTime.UtcNow;
         await _db.PutAsync(StoreName, transaction);
+        await _outbox.EnqueueAsync(StoreName, transaction.Id);
     }
 }
