@@ -7,11 +7,15 @@
 
 <h1>Accounts</h1>
 
-<EditForm Model="_newAccount" OnValidSubmit="AddAccountAsync">
-    <input @bind="_newAccount.Name" placeholder="Name" />
-    <input @bind="_newAccount.Currency" placeholder="Currency" />
-    <input type="number" step="0.01" @bind="_newAccount.InitialBalance" />
-    <button type="submit">Add account</button>
+<EditForm Model="_formModel" OnValidSubmit="SaveAccountAsync">
+    <input @bind="_formModel.Name" placeholder="Name" />
+    <input @bind="_formModel.Currency" placeholder="Currency" />
+    <input type="number" step="0.01" @bind="_formModel.InitialBalance" />
+    <button type="submit">@(_editingId is null ? "Add account" : "Save changes")</button>
+    @if (_editingId is not null)
+    {
+        <button type="button" @onclick="CancelEdit">Cancel</button>
+    }
 </EditForm>
 
 @if (_accounts is null)
@@ -29,6 +33,7 @@ else
         {
             <li>
                 @account.Name (@account.Currency) &mdash; @account.InitialBalance
+                <button @onclick="() => StartEdit(account)">Edit</button>
                 <button @onclick="() => DeleteAccountAsync(account.Id)">Delete</button>
             </li>
         }
@@ -37,7 +42,8 @@ else
 
 @code {
     private List<Account>? _accounts;
-    private NewAccountModel _newAccount = new();
+    private Guid? _editingId;
+    private AccountFormModel _formModel = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -49,20 +55,50 @@ else
         _accounts = await AccountService.GetAllAsync();
     }
 
-    private async Task AddAccountAsync()
+    private void StartEdit(Account account)
     {
-        await AccountService.CreateAsync(_newAccount.Name, _newAccount.Currency, _newAccount.InitialBalance);
-        _newAccount = new NewAccountModel();
+        _editingId = account.Id;
+        _formModel = new AccountFormModel
+        {
+            Name = account.Name,
+            Currency = account.Currency,
+            InitialBalance = account.InitialBalance
+        };
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+        _formModel = new AccountFormModel();
+    }
+
+    private async Task SaveAccountAsync()
+    {
+        if (_editingId is { } id)
+        {
+            await AccountService.UpdateAsync(id, _formModel.Name, _formModel.Currency, _formModel.InitialBalance);
+        }
+        else
+        {
+            await AccountService.CreateAsync(_formModel.Name, _formModel.Currency, _formModel.InitialBalance);
+        }
+
+        CancelEdit();
         await LoadAsync();
     }
 
     private async Task DeleteAccountAsync(Guid id)
     {
+        if (_editingId == id)
+        {
+            CancelEdit();
+        }
+
         await AccountService.DeleteAsync(id);
         await LoadAsync();
     }
 
-    private class NewAccountModel
+    private class AccountFormModel
     {
         public string Name { get; set; } = string.Empty;
         public string Currency { get; set; } = "USD";

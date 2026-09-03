@@ -54,6 +54,32 @@ public class LocalTransactionService
         return transaction;
     }
 
+    public async Task UpdateAsync(
+        Guid id,
+        Guid accountId,
+        Guid categoryId,
+        TransactionType type,
+        decimal amount,
+        DateOnly date,
+        string? note)
+    {
+        var transaction = await _db.GetAsync<Transaction>(StoreName, id.ToString());
+        if (transaction is null)
+        {
+            return;
+        }
+
+        transaction.AccountId = accountId;
+        transaction.CategoryId = categoryId;
+        transaction.Type = type;
+        transaction.Amount = amount;
+        transaction.Date = date;
+        transaction.Note = note;
+        transaction.UpdatedAt = DateTime.UtcNow;
+        await _db.PutAsync(StoreName, transaction);
+        await _outbox.EnqueueAsync(StoreName, transaction.Id);
+    }
+
     public async Task DeleteAsync(Guid id)
     {
         var transaction = await _db.GetAsync<Transaction>(StoreName, id.ToString());

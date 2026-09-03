@@ -37,6 +37,22 @@ public class LocalAccountService
         return account;
     }
 
+    public async Task UpdateAsync(Guid id, string name, string currency, decimal initialBalance)
+    {
+        var account = await _db.GetAsync<Account>(StoreName, id.ToString());
+        if (account is null)
+        {
+            return;
+        }
+
+        account.Name = name;
+        account.Currency = currency;
+        account.InitialBalance = initialBalance;
+        account.UpdatedAt = DateTime.UtcNow;
+        await _db.PutAsync(StoreName, account);
+        await _outbox.EnqueueAsync(StoreName, account.Id);
+    }
+
     public async Task DeleteAsync(Guid id)
     {
         var account = await _db.GetAsync<Account>(StoreName, id.ToString());

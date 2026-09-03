@@ -8,13 +8,17 @@
 
 <h1>Categories</h1>
 
-<EditForm Model="_newCategory" OnValidSubmit="AddCategoryAsync">
-    <input @bind="_newCategory.Name" placeholder="Name" />
-    <select @bind="_newCategory.Type">
+<EditForm Model="_formModel" OnValidSubmit="SaveCategoryAsync">
+    <input @bind="_formModel.Name" placeholder="Name" />
+    <select @bind="_formModel.Type">
         <option value="@CategoryType.Expense">Expense</option>
         <option value="@CategoryType.Income">Income</option>
     </select>
-    <button type="submit">Add category</button>
+    <button type="submit">@(_editingId is null ? "Add category" : "Save changes")</button>
+    @if (_editingId is not null)
+    {
+        <button type="button" @onclick="CancelEdit">Cancel</button>
+    }
 </EditForm>
 
 @if (_categories is null)
@@ -32,6 +36,7 @@ else
         {
             <li>
                 @category.Name (@category.Type)
+                <button @onclick="() => StartEdit(category)">Edit</button>
                 <button @onclick="() => DeleteCategoryAsync(category.Id)">Delete</button>
             </li>
         }
@@ -40,7 +45,8 @@ else
 
 @code {
     private List<Category>? _categories;
-    private NewCategoryModel _newCategory = new();
+    private Guid? _editingId;
+    private CategoryFormModel _formModel = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -52,22 +58,55 @@ else
         _categories = await CategoryService.GetAllAsync();
     }
 
-    private async Task AddCategoryAsync()
+    private void StartEdit(Category category)
     {
-        await CategoryService.CreateAsync(_newCategory.Name, _newCategory.Type, null, null);
-        _newCategory = new NewCategoryModel();
+        _editingId = category.Id;
+        _formModel = new CategoryFormModel
+        {
+            Name = category.Name,
+            Type = category.Type,
+            Icon = category.Icon,
+            Color = category.Color
+        };
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+        _formModel = new CategoryFormModel();
+    }
+
+    private async Task SaveCategoryAsync()
+    {
+        if (_editingId is { } id)
+        {
+            await CategoryService.UpdateAsync(id, _formModel.Name, _formModel.Type, _formModel.Icon, _formModel.Color);
+        }
+        else
+        {
+            await CategoryService.CreateAsync(_formModel.Name, _formModel.Type, _formModel.Icon, _formModel.Color);
+        }
+
+        CancelEdit();
         await LoadAsync();
     }
 
     private async Task DeleteCategoryAsync(Guid id)
     {
+        if (_editingId == id)
+        {
+            CancelEdit();
+        }
+
         await CategoryService.DeleteAsync(id);
         await LoadAsync();
     }
 
-    private class NewCategoryModel
+    private class CategoryFormModel
     {
         public string Name { get; set; } = string.Empty;
         public CategoryType Type { get; set; } = CategoryType.Expense;
+        public string? Icon { get; set; }
+        public string? Color { get; set; }
     }
 }

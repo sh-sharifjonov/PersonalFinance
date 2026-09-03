@@ -39,6 +39,23 @@ public class LocalCategoryService
         return category;
     }
 
+    public async Task UpdateAsync(Guid id, string name, CategoryType type, string? icon, string? color)
+    {
+        var category = await _db.GetAsync<Category>(StoreName, id.ToString());
+        if (category is null)
+        {
+            return;
+        }
+
+        category.Name = name;
+        category.Type = type;
+        category.Icon = icon;
+        category.Color = color;
+        category.UpdatedAt = DateTime.UtcNow;
+        await _db.PutAsync(StoreName, category);
+        await _outbox.EnqueueAsync(StoreName, category.Id);
+    }
+
     public async Task DeleteAsync(Guid id)
     {
         var category = await _db.GetAsync<Category>(StoreName, id.ToString());
