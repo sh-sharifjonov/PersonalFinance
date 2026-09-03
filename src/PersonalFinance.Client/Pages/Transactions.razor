@@ -1,0 +1,142 @@
+@page "/transactions"
+@using PersonalFinance.Client.Services
+@using PersonalFinance.Domain.Entities
+@using PersonalFinance.Domain.Enums
+@inject LocalTransactionService TransactionService
+@inject LocalAccountService AccountService
+@inject LocalCategoryService CategoryService
+
+<PageTitle>Transactions</PageTitle>
+
+<h1>Transactions</h1>
+
+@if (_accounts is null || _categories is null)
+{
+    <p>Loading...</p>
+}
+else if (_accounts.Count == 0)
+{
+    <p>Add an <a href="accounts">account</a> first.</p>
+}
+else if (_categories.Count == 0)
+{
+    <p>Add a <a href="categories">category</a> first.</p>
+}
+else
+{
+    <EditForm Model="_newTransaction" OnValidSubmit="AddTransactionAsync">
+        <select @bind="_newTransaction.AccountId">
+            @foreach (var account in _accounts)
+            {
+                <option value="@account.Id">@account.Name</option>
+            }
+        </select>
+        <select @bind="_newTransaction.CategoryId">
+            @foreach (var category in _categories)
+            {
+                <option value="@category.Id">@category.Name</option>
+            }
+        </select>
+        <select @bind="_newTransaction.Type">
+            <option value="@TransactionType.Expense">Expense</option>
+            <option value="@TransactionType.Income">Income</option>
+        </select>
+        <input type="number" step="0.01" @bind="_newTransaction.Amount" placeholder="Amount" />
+        <input type="date" @bind="_newTransaction.Date" />
+        <input @bind="_newTransaction.Note" placeholder="Note" />
+        <button type="submit">Add transaction</button>
+    </EditForm>
+}
+
+@if (_transactions is null)
+{
+    <p>Loading...</p>
+}
+else if (_transactions.Count == 0)
+{
+    <p>No transactions yet.</p>
+}
+else
+{
+    <ul>
+        @foreach (var transaction in _transactions)
+        {
+            <li>
+                @transaction.Date.ToString("yyyy-MM-dd") &mdash; @AccountName(transaction.AccountId) / @CategoryName(transaction.CategoryId) &mdash; @transaction.Type @transaction.Amount
+                @if (!string.IsNullOrWhiteSpace(transaction.Note))
+                {
+                    <em>(@transaction.Note)</em>
+                }
+                <button @onclick="() => DeleteTransactionAsync(transaction.Id)">Delete</button>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private List<Account>? _accounts;
+    private List<Category>? _categories;
+    private List<Transaction>? _transactions;
+    private NewTransactionModel _newTransaction = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _accounts = await AccountService.GetAllAsync();
+        _categories = await CategoryService.GetAllAsync();
+        _transactions = await TransactionService.GetAllAsync();
+
+        if (_newTransaction.AccountId == Guid.Empty && _accounts.Count > 0)
+        {
+            _newTransaction.AccountId = _accounts[0].Id;
+        }
+
+        if (_newTransaction.CategoryId == Guid.Empty && _categories.Count > 0)
+        {
+            _newTransaction.CategoryId = _categories[0].Id;
+        }
+    }
+
+    private async Task AddTransactionAsync()
+    {
+        await TransactionService.CreateAsync(
+            _newTransaction.AccountId,
+            _newTransaction.CategoryId,
+            _newTransaction.Type,
+            _newTransaction.Amount,
+            _newTransaction.Date,
+            string.IsNullOrWhiteSpace(_newTransaction.Note) ? null : _newTransaction.Note);
+
+        _newTransaction = new NewTransactionModel
+        {
+            AccountId = _newTransaction.AccountId,
+            CategoryId = _newTransaction.CategoryId
+        };
+
+        await LoadAsync();
+    }
+
+    private async Task DeleteTransactionAsync(Guid id)
+    {
+        await TransactionService.DeleteAsync(id);
+        await LoadAsync();
+    }
+
+    private string AccountName(Guid id) => _accounts?.FirstOrDefault(a => a.Id == id)?.Name ?? "?";
+
+    private string CategoryName(Guid id) => _categories?.FirstOrDefault(c => c.Id == id)?.Name ?? "?";
+
+    private class NewTransactionModel
+    {
+        public Guid AccountId { get; set; }
+        public Guid CategoryId { get; set; }
+        public TransactionType Type { get; set; } = TransactionType.Expense;
+        public decimal Amount { get; set; }
+        public DateOnly Date { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public string? Note { get; set; }
+    }
+}

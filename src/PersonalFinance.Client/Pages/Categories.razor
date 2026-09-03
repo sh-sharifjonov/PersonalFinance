@@ -1,0 +1,73 @@
+@page "/categories"
+@using PersonalFinance.Client.Services
+@using PersonalFinance.Domain.Entities
+@using PersonalFinance.Domain.Enums
+@inject LocalCategoryService CategoryService
+
+<PageTitle>Categories</PageTitle>
+
+<h1>Categories</h1>
+
+<EditForm Model="_newCategory" OnValidSubmit="AddCategoryAsync">
+    <input @bind="_newCategory.Name" placeholder="Name" />
+    <select @bind="_newCategory.Type">
+        <option value="@CategoryType.Expense">Expense</option>
+        <option value="@CategoryType.Income">Income</option>
+    </select>
+    <button type="submit">Add category</button>
+</EditForm>
+
+@if (_categories is null)
+{
+    <p>Loading...</p>
+}
+else if (_categories.Count == 0)
+{
+    <p>No categories yet.</p>
+}
+else
+{
+    <ul>
+        @foreach (var category in _categories)
+        {
+            <li>
+                @category.Name (@category.Type)
+                <button @onclick="() => DeleteCategoryAsync(category.Id)">Delete</button>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private List<Category>? _categories;
+    private NewCategoryModel _newCategory = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _categories = await CategoryService.GetAllAsync();
+    }
+
+    private async Task AddCategoryAsync()
+    {
+        await CategoryService.CreateAsync(_newCategory.Name, _newCategory.Type, null, null);
+        _newCategory = new NewCategoryModel();
+        await LoadAsync();
+    }
+
+    private async Task DeleteCategoryAsync(Guid id)
+    {
+        await CategoryService.DeleteAsync(id);
+        await LoadAsync();
+    }
+
+    private class NewCategoryModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public CategoryType Type { get; set; } = CategoryType.Expense;
+    }
+}
