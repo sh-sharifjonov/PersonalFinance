@@ -8,15 +8,17 @@ public record LoginResult(bool Success, string? Error);
 public class AuthService
 {
     private const string AccessTokenKey = "auth:accessToken";
+    private const string RefreshTokenKey = "auth:refreshToken";
 
     private readonly HttpClient _http;
     private readonly IJSRuntime _jsRuntime;
+    private readonly SemaphoreSlim _refreshLock = new(1, 1);
 
     public AuthService(IHttpClientFactory httpClientFactory, IJSRuntime jsRuntime)
     {
-        // Uses the unauthenticated "Api" client: login has no token yet, and routing it
-        // through the authorized client would create a circular dependency (that client's
-        // handler needs this service to look up the token).
+        // Uses the unauthenticated "Api" client: login/refresh have no valid access token
+        // yet, and routing them through the authorized client would create a circular
+        // dependency (that client's handler needs this service to look up the token).
         _http = httpClientFactory.CreateClient("Api");
         _jsRuntime = jsRuntime;
     }
@@ -30,11 +32,49 @@ public class AuthService
     public async Task LogoutAsync()
     {
         await _jsRuntime.InvokeVoidAsync("localStorage.removeItem", AccessTokenKey);
+        await _jsRuntime.InvokeVoidAsync("localStorage.removeItem", RefreshTokenKey);
     }
 
     public async Task<string?> GetAccessTokenAsync()
     {
         return await _jsRuntime.InvokeAsync<string?>("localStorage.getItem", AccessTokenKey);
+    }
+
+    // Called by AuthorizationMessageHandler when a request comes back 401. Rotates the
+    // refresh token server-side (see RefreshTokenCommand), so only one caller should be
+    // mid-refresh at a time — concurrent 401s would otherwise each burn a rotation.
+    public async Task<bool> RefreshAsync()
+    {
+        await _refreshLock.WaitAsync();
+        try
+        {
+            var refreshToken = await _jsRuntime.InvokeAsync<string?>("localStorage.getItem", RefreshTokenKey);
+            if (string.IsNullOrEmpty(refreshToken))
+            {
+                return false;
+            }
+
+            var response = await _http.PostAsJsonAsync("api/auth/refresh", new { refreshToken });
+            if (!response.IsSuccessStatusCode)
+            {
+                await LogoutAsync();
+                return false;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<AuthResponse>();
+            if (result is null)
+            {
+                await LogoutAsync();
+                return false;
+            }
+
+            await StoreTokensAsync(result);
+            return true;
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
     }
 
     private async Task<LoginResult> AuthenticateAsync(string requestUri, object payload)
@@ -52,8 +92,14 @@ public class AuthService
             return new LoginResult(false, "Unexpected response from server.");
         }
 
-        await _jsRuntime.InvokeVoidAsync("localStorage.setItem", AccessTokenKey, result.AccessToken);
+        await StoreTokensAsync(result);
         return new LoginResult(true, null);
+    }
+
+    private async Task StoreTokensAsync(AuthResponse response)
+    {
+        await _jsRuntime.InvokeVoidAsync("localStorage.setItem", AccessTokenKey, response.AccessToken);
+        await _jsRuntime.InvokeVoidAsync("localStorage.setItem", RefreshTokenKey, response.RefreshToken);
     }
 
     private static async Task<string> ExtractErrorMessageAsync(HttpResponseMessage response)
