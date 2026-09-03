@@ -1,4 +1,5 @@
 @page "/transactions"
+@attribute [Authorize]
 @using PersonalFinance.Client.Services
 @using PersonalFinance.Domain.Entities
 @using PersonalFinance.Domain.Enums
@@ -8,74 +9,157 @@
 
 <PageTitle>Transactions</PageTitle>
 
-<h1>Transactions</h1>
+<h1 class="h3 mb-3">Transactions</h1>
+
+@if (_transactions is not null && _transactions.Count > 0)
+{
+    <div class="row g-3 mb-4">
+        <div class="col-sm-4">
+            <div class="card summary-card">
+                <div class="card-body">
+                    <div class="text-muted small">Income</div>
+                    <div class="value amount-income">@TotalIncome.ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-4">
+            <div class="card summary-card">
+                <div class="card-body">
+                    <div class="text-muted small">Expenses</div>
+                    <div class="value amount-expense">@TotalExpense.ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-4">
+            <div class="card summary-card">
+                <div class="card-body">
+                    <div class="text-muted small">Net</div>
+                    <div class="value @(Net >= 0 ? "amount-income" : "amount-expense")">@Net.ToString("N2")</div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
 
 @if (_accounts is null || _categories is null)
 {
-    <p>Loading...</p>
+    <p class="text-muted">Loading...</p>
 }
 else if (_accounts.Count == 0)
 {
-    <p>Add an <a href="accounts">account</a> first.</p>
+    <div class="empty-state">Add an <a href="accounts">account</a> first.</div>
 }
 else if (_categories.Count == 0)
 {
-    <p>Add a <a href="categories">category</a> first.</p>
+    <div class="empty-state">Add a <a href="categories">category</a> first.</div>
 }
 else
 {
-    <EditForm Model="_formModel" OnValidSubmit="SaveTransactionAsync">
-        <select @bind="_formModel.AccountId">
-            @foreach (var account in _accounts)
-            {
-                <option value="@account.Id">@account.Name</option>
-            }
-        </select>
-        <select @bind="_formModel.CategoryId">
-            @foreach (var category in _categories)
-            {
-                <option value="@category.Id">@category.Name</option>
-            }
-        </select>
-        <select @bind="_formModel.Type">
-            <option value="@TransactionType.Expense">Expense</option>
-            <option value="@TransactionType.Income">Income</option>
-        </select>
-        <input type="number" step="0.01" @bind="_formModel.Amount" placeholder="Amount" />
-        <input type="date" @bind="_formModel.Date" />
-        <input @bind="_formModel.Note" placeholder="Note" />
-        <button type="submit">@(_editingId is null ? "Add transaction" : "Save changes")</button>
-        @if (_editingId is not null)
-        {
-            <button type="button" @onclick="CancelEdit">Cancel</button>
-        }
-    </EditForm>
+    <div class="card mb-4">
+        <div class="card-body">
+            <h2 class="h6 text-uppercase text-muted mb-3">@(_editingId is null ? "Add transaction" : "Edit transaction")</h2>
+            <EditForm Model="_formModel" OnValidSubmit="SaveTransactionAsync">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label">Account</label>
+                        <select class="form-select" @bind="_formModel.AccountId">
+                            @foreach (var account in _accounts)
+                            {
+                                <option value="@account.Id">@account.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Category</label>
+                        <select class="form-select" @bind="_formModel.CategoryId">
+                            @foreach (var category in _categories)
+                            {
+                                <option value="@category.Id">@category.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Type</label>
+                        <select class="form-select" @bind="_formModel.Type">
+                            <option value="@TransactionType.Expense">Expense</option>
+                            <option value="@TransactionType.Income">Income</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Amount</label>
+                        <input type="number" step="0.01" class="form-control" @bind="_formModel.Amount" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Date</label>
+                        <input type="date" class="form-control" @bind="_formModel.Date" />
+                    </div>
+                    <div class="col-md-10">
+                        <label class="form-label">Note</label>
+                        <input class="form-control" @bind="_formModel.Note" placeholder="Optional" />
+                    </div>
+                    <div class="col-md-2 d-grid">
+                        <button type="submit" class="btn btn-primary">@(_editingId is null ? "Add" : "Save")</button>
+                    </div>
+                </div>
+                @if (_editingId is not null)
+                {
+                    <button type="button" class="btn btn-link btn-sm mt-2 p-0" @onclick="CancelEdit">Cancel edit</button>
+                }
+            </EditForm>
+        </div>
+    </div>
 }
 
 @if (_transactions is null)
 {
-    <p>Loading...</p>
+    <p class="text-muted">Loading...</p>
 }
 else if (_transactions.Count == 0)
 {
-    <p>No transactions yet.</p>
+    <div class="empty-state">No transactions yet.</div>
 }
 else
 {
-    <ul>
-        @foreach (var transaction in _transactions)
-        {
-            <li>
-                @transaction.Date.ToString("yyyy-MM-dd") &mdash; @AccountName(transaction.AccountId) / @CategoryName(transaction.CategoryId) &mdash; @transaction.Type @transaction.Amount
-                @if (!string.IsNullOrWhiteSpace(transaction.Note))
-                {
-                    <em>(@transaction.Note)</em>
-                }
-                <button @onclick="() => StartEdit(transaction)">Edit</button>
-                <button @onclick="() => DeleteTransactionAsync(transaction.Id)">Delete</button>
-            </li>
-        }
-    </ul>
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Account</th>
+                        <th>Category</th>
+                        <th>Type</th>
+                        <th class="text-end">Amount</th>
+                        <th>Note</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var transaction in _transactions)
+                    {
+                        <tr>
+                            <td>@transaction.Date.ToString("yyyy-MM-dd")</td>
+                            <td>@AccountName(transaction.AccountId)</td>
+                            <td>@CategoryName(transaction.CategoryId)</td>
+                            <td>
+                                <span class="badge @(transaction.Type == TransactionType.Income ? "bg-success" : "bg-danger")">
+                                    @transaction.Type
+                                </span>
+                            </td>
+                            <td class="text-end @(transaction.Type == TransactionType.Income ? "amount-income" : "amount-expense")">
+                                @(transaction.Type == TransactionType.Income ? "+" : "-")@transaction.Amount.ToString("N2")
+                            </td>
+                            <td class="text-muted">@transaction.Note</td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => StartEdit(transaction)">Edit</button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteTransactionAsync(transaction.Id)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
 }
 
 @code {
@@ -84,6 +168,10 @@ else
     private List<Transaction>? _transactions;
     private Guid? _editingId;
     private TransactionFormModel _formModel = new();
+
+    private decimal TotalIncome => _transactions?.Where(t => t.Type == TransactionType.Income).Sum(t => t.Amount) ?? 0;
+    private decimal TotalExpense => _transactions?.Where(t => t.Type == TransactionType.Expense).Sum(t => t.Amount) ?? 0;
+    private decimal Net => TotalIncome - TotalExpense;
 
     protected override async Task OnInitializedAsync()
     {

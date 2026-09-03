@@ -87,3 +87,72 @@ code {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+
+/* Personal Finance theme */
+
+:root {
+    --pf-income: #198754;
+    --pf-expense: #dc3545;
+}
+
+html, body {
+    height: 100%;
+}
+
+body {
+    background-color: #f5f7fa;
+}
+
+.app-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+}
+
+.page-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 1.75rem 1rem 3rem;
+}
+
+.navbar-brand {
+    font-weight: 600;
+}
+
+.card {
+    border: none;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.auth-card {
+    max-width: 420px;
+    margin: 3rem auto 0;
+}
+
+.hero {
+    padding: 4rem 1rem 2rem;
+    text-align: center;
+}
+
+.amount-income {
+    color: var(--pf-income);
+    font-weight: 600;
+}
+
+.amount-expense {
+    color: var(--pf-expense);
+    font-weight: 600;
+}
+
+.summary-card .value {
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.empty-state {
+    padding: 2.5rem 1rem;
+    text-align: center;
+    color: var(--bs-secondary-color);
+}

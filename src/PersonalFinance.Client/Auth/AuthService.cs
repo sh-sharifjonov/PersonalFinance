@@ -12,15 +12,17 @@ public class AuthService
 
     private readonly HttpClient _http;
     private readonly IJSRuntime _jsRuntime;
+    private readonly JwtAuthenticationStateProvider _authStateProvider;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
 
-    public AuthService(IHttpClientFactory httpClientFactory, IJSRuntime jsRuntime)
+    public AuthService(IHttpClientFactory httpClientFactory, IJSRuntime jsRuntime, JwtAuthenticationStateProvider authStateProvider)
     {
         // Uses the unauthenticated "Api" client: login/refresh have no valid access token
         // yet, and routing them through the authorized client would create a circular
         // dependency (that client's handler needs this service to look up the token).
         _http = httpClientFactory.CreateClient("Api");
         _jsRuntime = jsRuntime;
+        _authStateProvider = authStateProvider;
     }
 
     public Task<LoginResult> LoginAsync(string email, string password) =>
@@ -33,6 +35,7 @@ public class AuthService
     {
         await _jsRuntime.InvokeVoidAsync("localStorage.removeItem", AccessTokenKey);
         await _jsRuntime.InvokeVoidAsync("localStorage.removeItem", RefreshTokenKey);
+        _authStateProvider.NotifyAuthenticationChanged();
     }
 
     public async Task<string?> GetAccessTokenAsync()
@@ -100,6 +103,7 @@ public class AuthService
     {
         await _jsRuntime.InvokeVoidAsync("localStorage.setItem", AccessTokenKey, response.AccessToken);
         await _jsRuntime.InvokeVoidAsync("localStorage.setItem", RefreshTokenKey, response.RefreshToken);
+        _authStateProvider.NotifyAuthenticationChanged();
     }
 
     private static async Task<string> ExtractErrorMessageAsync(HttpResponseMessage response)

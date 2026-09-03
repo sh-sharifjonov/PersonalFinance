@@ -1,8 +1,37 @@
-﻿@page "/"
+@page "/"
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Personal Finance</PageTitle>
 
-<h1>Personal Finance</h1>
+@if (_checked && !_isAuthenticated)
+{
+    <div class="hero">
+        <h1 class="display-5 fw-bold mb-3">Take control of your money</h1>
+        <p class="lead text-muted mb-4">
+            An offline-first tracker for your accounts, categories and transactions.
+            Everything works without a connection and syncs automatically once you're back online.
+        </p>
+        <div class="d-flex justify-content-center gap-2">
+            <a class="btn btn-primary btn-lg" href="register">Get started</a>
+            <a class="btn btn-outline-secondary btn-lg" href="login">Log in</a>
+        </div>
+    </div>
+}
 
-<p><a href="accounts">Manage accounts</a> (stored locally in IndexedDB)</p>
-<p><a href="login">Log in</a> or <a href="register">register</a> to sync with the server</p>
+@code {
+    private bool _checked;
+    private bool _isAuthenticated;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _isAuthenticated = state.User.Identity?.IsAuthenticated ?? false;
+        _checked = true;
+
+        if (_isAuthenticated)
+        {
+            Navigation.NavigateTo("/transactions");
+        }
+    }
+}

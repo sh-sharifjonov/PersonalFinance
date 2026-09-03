@@ -1,43 +1,80 @@
 @page "/accounts"
+@attribute [Authorize]
 @using PersonalFinance.Client.Services
 @using PersonalFinance.Domain.Entities
 @inject LocalAccountService AccountService
 
 <PageTitle>Accounts</PageTitle>
 
-<h1>Accounts</h1>
+<h1 class="h3 mb-3">Accounts</h1>
 
-<EditForm Model="_formModel" OnValidSubmit="SaveAccountAsync">
-    <input @bind="_formModel.Name" placeholder="Name" />
-    <input @bind="_formModel.Currency" placeholder="Currency" />
-    <input type="number" step="0.01" @bind="_formModel.InitialBalance" />
-    <button type="submit">@(_editingId is null ? "Add account" : "Save changes")</button>
-    @if (_editingId is not null)
-    {
-        <button type="button" @onclick="CancelEdit">Cancel</button>
-    }
-</EditForm>
+<div class="card mb-4">
+    <div class="card-body">
+        <h2 class="h6 text-uppercase text-muted mb-3">@(_editingId is null ? "Add account" : "Edit account")</h2>
+        <EditForm Model="_formModel" OnValidSubmit="SaveAccountAsync">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-5">
+                    <label class="form-label">Name</label>
+                    <input class="form-control" @bind="_formModel.Name" required />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Currency</label>
+                    <input class="form-control" @bind="_formModel.Currency" required />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Initial balance</label>
+                    <input type="number" step="0.01" class="form-control" @bind="_formModel.InitialBalance" />
+                </div>
+                <div class="col-md-1 d-grid">
+                    <button type="submit" class="btn btn-primary">@(_editingId is null ? "Add" : "Save")</button>
+                </div>
+            </div>
+            @if (_editingId is not null)
+            {
+                <button type="button" class="btn btn-link btn-sm mt-2 p-0" @onclick="CancelEdit">Cancel edit</button>
+            }
+        </EditForm>
+    </div>
+</div>
 
 @if (_accounts is null)
 {
-    <p>Loading...</p>
+    <p class="text-muted">Loading...</p>
 }
 else if (_accounts.Count == 0)
 {
-    <p>No accounts yet.</p>
+    <div class="empty-state">No accounts yet. Add your first one above.</div>
 }
 else
 {
-    <ul>
-        @foreach (var account in _accounts)
-        {
-            <li>
-                @account.Name (@account.Currency) &mdash; @account.InitialBalance
-                <button @onclick="() => StartEdit(account)">Edit</button>
-                <button @onclick="() => DeleteAccountAsync(account.Id)">Delete</button>
-            </li>
-        }
-    </ul>
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Currency</th>
+                        <th class="text-end">Initial balance</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var account in _accounts)
+                    {
+                        <tr>
+                            <td>@account.Name</td>
+                            <td>@account.Currency</td>
+                            <td class="text-end">@account.InitialBalance.ToString("N2")</td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => StartEdit(account)">Edit</button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAccountAsync(account.Id)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
 }
 
 @code {

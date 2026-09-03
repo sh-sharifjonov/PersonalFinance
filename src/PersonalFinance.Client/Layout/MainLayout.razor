@@ -1,14 +1,46 @@
 @inherits LayoutComponentBase
+@using PersonalFinance.Client.Auth
+@inject AuthService AuthService
+@inject NavigationManager Navigation
 
-<nav>
-    <a href="">Home</a> |
-    <a href="accounts">Accounts</a> |
-    <a href="categories">Categories</a> |
-    <a href="transactions">Transactions</a> |
-    <a href="login">Log in</a> |
-    <a href="register">Register</a>
+<nav class="navbar navbar-expand-md navbar-dark bg-primary sticky-top shadow-sm">
+    <div class="container">
+        <a class="navbar-brand" href="">💰 Personal Finance</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navMenu">
+            <AuthorizeView>
+                <Authorized>
+                    <ul class="navbar-nav me-auto mb-2 mb-md-0">
+                        <li class="nav-item"><NavLink class="nav-link" href="transactions" Match="NavLinkMatch.All">Transactions</NavLink></li>
+                        <li class="nav-item"><NavLink class="nav-link" href="accounts">Accounts</NavLink></li>
+                        <li class="nav-item"><NavLink class="nav-link" href="categories">Categories</NavLink></li>
+                    </ul>
+                    <div class="d-flex align-items-center gap-3">
+                        <span class="text-white-50 small d-none d-md-inline">@context.User.Identity?.Name</span>
+                        <button type="button" class="btn btn-outline-light btn-sm" @onclick="LogoutAsync">Log out</button>
+                    </div>
+                </Authorized>
+                <NotAuthorized>
+                    <ul class="navbar-nav ms-auto align-items-md-center gap-md-2">
+                        <li class="nav-item"><NavLink class="nav-link" href="login">Log in</NavLink></li>
+                        <li class="nav-item"><NavLink class="btn btn-light btn-sm" href="register">Register</NavLink></li>
+                    </ul>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
+    </div>
 </nav>
 
-<hr />
+<div class="page-container">
+    @Body
+</div>
 
-@Body
+@code {
+    private async Task LogoutAsync()
+    {
+        await AuthService.LogoutAsync();
+        Navigation.NavigateTo("/");
+    }
+}

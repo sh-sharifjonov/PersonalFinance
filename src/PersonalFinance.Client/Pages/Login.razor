@@ -2,30 +2,59 @@
 @using PersonalFinance.Client.Auth
 @using PersonalFinance.Client.Sync
 @inject AuthService AuthService
+@inject AuthenticationStateProvider AuthStateProvider
 @inject SyncService SyncService
 @inject NavigationManager Navigation
 
 <PageTitle>Log in</PageTitle>
 
-<h1>Log in</h1>
+<div class="card auth-card">
+    <div class="card-body p-4">
+        <h1 class="h3 mb-4 text-center">Log in</h1>
 
-<EditForm Model="_model" OnValidSubmit="LoginAsync">
-    <input @bind="_model.Email" placeholder="Email" type="email" />
-    <input @bind="_model.Password" placeholder="Password" type="password" />
-    <button type="submit" disabled="@_isBusy">Log in</button>
-</EditForm>
+        <EditForm Model="_model" OnValidSubmit="LoginAsync">
+            <div class="mb-3">
+                <label class="form-label" for="email">Email</label>
+                <input id="email" class="form-control" @bind="_model.Email" type="email" required />
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="password">Password</label>
+                <input id="password" class="form-control" @bind="_model.Password" type="password" required />
+            </div>
 
-@if (_error is not null)
-{
-    <p style="color:red">@_error</p>
-}
+            @if (_error is not null)
+            {
+                <div class="alert alert-danger py-2">@_error</div>
+            }
 
-<p><a href="register">Don't have an account? Register</a></p>
+            <button type="submit" class="btn btn-primary w-100" disabled="@_isBusy">
+                @if (_isBusy)
+                {
+                    <span class="spinner-border spinner-border-sm me-2"></span>
+                }
+                Log in
+            </button>
+        </EditForm>
+
+        <p class="text-center mt-3 mb-0">
+            <a href="register">Don't have an account? Register</a>
+        </p>
+    </div>
+</div>
 
 @code {
     private readonly LoginModel _model = new();
     private string? _error;
     private bool _isBusy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (state.User.Identity?.IsAuthenticated ?? false)
+        {
+            Navigation.NavigateTo("/transactions");
+        }
+    }
 
     private async Task LoginAsync()
     {
@@ -42,7 +71,7 @@
         }
 
         _ = SyncService.SyncAsync();
-        Navigation.NavigateTo("/accounts");
+        Navigation.NavigateTo("/transactions");
     }
 
     private class LoginModel

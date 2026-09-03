@@ -1,4 +1,5 @@
 @page "/categories"
+@attribute [Authorize]
 @using PersonalFinance.Client.Services
 @using PersonalFinance.Domain.Entities
 @using PersonalFinance.Domain.Enums
@@ -6,41 +7,76 @@
 
 <PageTitle>Categories</PageTitle>
 
-<h1>Categories</h1>
+<h1 class="h3 mb-3">Categories</h1>
 
-<EditForm Model="_formModel" OnValidSubmit="SaveCategoryAsync">
-    <input @bind="_formModel.Name" placeholder="Name" />
-    <select @bind="_formModel.Type">
-        <option value="@CategoryType.Expense">Expense</option>
-        <option value="@CategoryType.Income">Income</option>
-    </select>
-    <button type="submit">@(_editingId is null ? "Add category" : "Save changes")</button>
-    @if (_editingId is not null)
-    {
-        <button type="button" @onclick="CancelEdit">Cancel</button>
-    }
-</EditForm>
+<div class="card mb-4">
+    <div class="card-body">
+        <h2 class="h6 text-uppercase text-muted mb-3">@(_editingId is null ? "Add category" : "Edit category")</h2>
+        <EditForm Model="_formModel" OnValidSubmit="SaveCategoryAsync">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-6">
+                    <label class="form-label">Name</label>
+                    <input class="form-control" @bind="_formModel.Name" required />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Type</label>
+                    <select class="form-select" @bind="_formModel.Type">
+                        <option value="@CategoryType.Expense">Expense</option>
+                        <option value="@CategoryType.Income">Income</option>
+                    </select>
+                </div>
+                <div class="col-md-2 d-grid">
+                    <button type="submit" class="btn btn-primary">@(_editingId is null ? "Add" : "Save")</button>
+                </div>
+            </div>
+            @if (_editingId is not null)
+            {
+                <button type="button" class="btn btn-link btn-sm mt-2 p-0" @onclick="CancelEdit">Cancel edit</button>
+            }
+        </EditForm>
+    </div>
+</div>
 
 @if (_categories is null)
 {
-    <p>Loading...</p>
+    <p class="text-muted">Loading...</p>
 }
 else if (_categories.Count == 0)
 {
-    <p>No categories yet.</p>
+    <div class="empty-state">No categories yet. Add your first one above.</div>
 }
 else
 {
-    <ul>
-        @foreach (var category in _categories)
-        {
-            <li>
-                @category.Name (@category.Type)
-                <button @onclick="() => StartEdit(category)">Edit</button>
-                <button @onclick="() => DeleteCategoryAsync(category.Id)">Delete</button>
-            </li>
-        }
-    </ul>
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var category in _categories)
+                    {
+                        <tr>
+                            <td>@category.Name</td>
+                            <td>
+                                <span class="badge @(category.Type == CategoryType.Income ? "bg-success" : "bg-danger")">
+                                    @category.Type
+                                </span>
+                            </td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => StartEdit(category)">Edit</button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteCategoryAsync(category.Id)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
 }
 
 @code {

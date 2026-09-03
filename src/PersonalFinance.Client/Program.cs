@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using PersonalFinance.Client;
@@ -19,9 +20,12 @@ builder.Services.AddScoped<LocalAccountService>();
 builder.Services.AddScoped<LocalCategoryService>();
 builder.Services.AddScoped<LocalTransactionService>();
 
+builder.Services.AddAuthorizationCore();
+builder.Services.AddScoped<JwtAuthenticationStateProvider>();
+builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredService<JwtAuthenticationStateProvider>());
+
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddTransient<AuthorizationMessageHandler>();
-
 
 builder.Services.AddHttpClient("Api", client => client.BaseAddress = new Uri(apiBaseUrl));
 builder.Services.AddHttpClient("ApiAuthorized", client => client.BaseAddress = new Uri(apiBaseUrl))
