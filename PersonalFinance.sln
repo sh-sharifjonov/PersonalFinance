@@ -1,12 +1,12 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{BC2DD527-0F7B-487C-A5B4-E62204634F1D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Application", "src\Application\Application.csproj", "{46C92C79-177C-4381-BC71-BECB8203BD06}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PersonalFinance.Application", "src\PersonalFinance.Application\PersonalFinance.Application.csproj", "{46C92C79-177C-4381-BC71-BECB8203BD06}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Domain", "src\Domain\Domain.csproj", "{D7B1E8E8-65F8-45DC-A502-C56EE9C3CF35}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PersonalFinance.Domain", "src\PersonalFinance.Domain\PersonalFinance.Domain.csproj", "{D7B1E8E8-65F8-45DC-A502-C56EE9C3CF35}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Infrastructure", "src\Infrastructure\Infrastructure.csproj", "{EF87489C-2776-4FF8-A1DA-038558D98A2A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PersonalFinance.Infrastructure", "src\PersonalFinance.Infrastructure\PersonalFinance.Infrastructure.csproj", "{EF87489C-2776-4FF8-A1DA-038558D98A2A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
