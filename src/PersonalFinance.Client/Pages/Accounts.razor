@@ -1,0 +1,71 @@
+@page "/accounts"
+@using PersonalFinance.Client.Services
+@using PersonalFinance.Domain.Entities
+@inject LocalAccountService AccountService
+
+<PageTitle>Accounts</PageTitle>
+
+<h1>Accounts</h1>
+
+<EditForm Model="_newAccount" OnValidSubmit="AddAccountAsync">
+    <input @bind="_newAccount.Name" placeholder="Name" />
+    <input @bind="_newAccount.Currency" placeholder="Currency" />
+    <input type="number" step="0.01" @bind="_newAccount.InitialBalance" />
+    <button type="submit">Add account</button>
+</EditForm>
+
+@if (_accounts is null)
+{
+    <p>Loading...</p>
+}
+else if (_accounts.Count == 0)
+{
+    <p>No accounts yet.</p>
+}
+else
+{
+    <ul>
+        @foreach (var account in _accounts)
+        {
+            <li>
+                @account.Name (@account.Currency) &mdash; @account.InitialBalance
+                <button @onclick="() => DeleteAccountAsync(account.Id)">Delete</button>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private List<Account>? _accounts;
+    private NewAccountModel _newAccount = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _accounts = await AccountService.GetAllAsync();
+    }
+
+    private async Task AddAccountAsync()
+    {
+        await AccountService.CreateAsync(_newAccount.Name, _newAccount.Currency, _newAccount.InitialBalance);
+        _newAccount = new NewAccountModel();
+        await LoadAsync();
+    }
+
+    private async Task DeleteAccountAsync(Guid id)
+    {
+        await AccountService.DeleteAsync(id);
+        await LoadAsync();
+    }
+
+    private class NewAccountModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Currency { get; set; } = "USD";
+        public decimal InitialBalance { get; set; }
+    }
+}

@@ -10,6 +10,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PersonalFinance.Infrastruct
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PersonalFinance.Api", "src\PersonalFinance.Api\PersonalFinance.Api.csproj", "{E7E9FB80-2A71-4343-99E4-2A36C7CDCC80}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PersonalFinance.Client", "src\PersonalFinance.Client\PersonalFinance.Client.csproj", "{9893B533-9E02-4B39-9661-9D681B8BA660}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -68,6 +70,18 @@ Global
 		{E7E9FB80-2A71-4343-99E4-2A36C7CDCC80}.Release|x64.Build.0 = Release|Any CPU
 		{E7E9FB80-2A71-4343-99E4-2A36C7CDCC80}.Release|x86.ActiveCfg = Release|Any CPU
 		{E7E9FB80-2A71-4343-99E4-2A36C7CDCC80}.Release|x86.Build.0 = Release|Any CPU
+		{9893B533-9E02-4B39-9661-9D681B8BA660}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9893B533-9E02-4B39-9661-9D681B8BA660}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9893B533-9E02-4B39-9661-9D681B8BA660}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{9893B533-9E02-4B39-9661-9D681B8BA660}.Debug|x64.Build.0 = Debug|Any CPU
+		{9893B533-9E02-4B39-9661-9D681B8BA660}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{9893B533-9E02-4B39-9661-9D681B8BA660}.Debug|x86.Build.0 = Debug|Any CPU
+		{9893B533-9E02-4B39-9661-9D681B8BA660}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9893B533-9E02-4B39-9661-9D681B8BA660}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9893B533-9E02-4B39-9661-9D681B8BA660}.Release|x64.ActiveCfg = Release|Any CPU
+		{9893B533-9E02-4B39-9661-9D681B8BA660}.Release|x64.Build.0 = Release|Any CPU
+		{9893B533-9E02-4B39-9661-9D681B8BA660}.Release|x86.ActiveCfg = Release|Any CPU
+		{9893B533-9E02-4B39-9661-9D681B8BA660}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -77,5 +91,6 @@ Global
 		{D7B1E8E8-65F8-45DC-A502-C56EE9C3CF35} = {BC2DD527-0F7B-487C-A5B4-E62204634F1D}
 		{EF87489C-2776-4FF8-A1DA-038558D98A2A} = {BC2DD527-0F7B-487C-A5B4-E62204634F1D}
 		{E7E9FB80-2A71-4343-99E4-2A36C7CDCC80} = {BC2DD527-0F7B-487C-A5B4-E62204634F1D}
+		{9893B533-9E02-4B39-9661-9D681B8BA660} = {BC2DD527-0F7B-487C-A5B4-E62204634F1D}
 	EndGlobalSection
 EndGlobal
