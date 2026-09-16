@@ -1,44 +1,60 @@
 @page "/login"
+@implements IDisposable
 @using PersonalFinance.Client.Auth
 @using PersonalFinance.Client.Sync
 @inject AuthService AuthService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject SyncService SyncService
+@inject ConnectivityService Connectivity
 @inject NavigationManager Navigation
 
-<PageTitle>Log in</PageTitle>
+<PageTitle>Вход</PageTitle>
 
-<div class="card auth-card">
-    <div class="card-body p-4">
-        <h1 class="h3 mb-4 text-center">Log in</h1>
+<div class="auth-shell">
+    <div class="auth-card">
+        <div class="auth-brand"><span class="brand-mark">PF</span>Финансы</div>
+        <h3>Вход</h3>
+        <p class="text-muted" style="font-size:13px;margin-bottom:var(--space-6)">
+            Данные хранятся на устройстве и синхронизируются, когда появится сеть.
+        </p>
 
         <EditForm Model="_model" OnValidSubmit="LoginAsync">
-            <div class="mb-3">
-                <label class="form-label" for="email">Email</label>
-                <input id="email" class="form-control" @bind="_model.Email" type="email" required />
+            <div class="field" style="margin-bottom:14px">
+                <label>Email</label>
+                <input class="input" type="email" @bind="_model.Email" required />
             </div>
-            <div class="mb-3">
-                <label class="form-label" for="password">Password</label>
-                <input id="password" class="form-control" @bind="_model.Password" type="password" required />
+            <div class="field">
+                <label>Пароль</label>
+                <input class="input" type="password" @bind="_model.Password" required />
             </div>
 
             @if (_error is not null)
             {
-                <div class="alert alert-danger py-2">@_error</div>
+                <div class="validation-message" style="margin-top:10px">@_error</div>
             }
 
-            <button type="submit" class="btn btn-primary w-100" disabled="@_isBusy">
+            @if (!Connectivity.IsOnline)
+            {
+                <div class="validation-message" style="margin-top:10px">Нет сети — вход недоступен, пока не восстановится соединение.</div>
+            }
+
+            <button type="submit" class="btn btn-primary btn-block" style="margin-top:22px;padding-block:9px" disabled="@(_isBusy || !Connectivity.IsOnline)">
                 @if (_isBusy)
                 {
-                    <span class="spinner-border spinner-border-sm me-2"></span>
+                    <i class="ph ph-spinner spin"></i>
                 }
-                Log in
+                Войти
             </button>
         </EditForm>
 
-        <p class="text-center mt-3 mb-0">
-            <a href="register">Don't have an account? Register</a>
-        </p>
+        <div style="font-size:12.5px;color:color-mix(in srgb, var(--color-text) 55%, transparent);margin-top:18px;text-align:center">
+            Нет аккаунта? <a href="register">Создать</a>
+        </div>
+
+        @if (!Connectivity.IsOnline)
+        {
+            <span class="chip" style="margin:26px auto 0"><i class="ph ph-wifi-slash"></i>Офлайн</span>
+        }
     </div>
 </div>
 
@@ -49,12 +65,18 @@
 
     protected override async Task OnInitializedAsync()
     {
+        Connectivity.OnlineStatusChanged += OnConnectivityChanged;
+
         var state = await AuthStateProvider.GetAuthenticationStateAsync();
         if (state.User.Identity?.IsAuthenticated ?? false)
         {
-            Navigation.NavigateTo("/transactions");
+            Navigation.NavigateTo("/dashboard");
         }
     }
+
+    private void OnConnectivityChanged(bool _) => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Connectivity.OnlineStatusChanged -= OnConnectivityChanged;
 
     private async Task LoginAsync()
     {
@@ -71,7 +93,7 @@
         }
 
         _ = SyncService.SyncAsync();
-        Navigation.NavigateTo("/transactions");
+        Navigation.NavigateTo("/dashboard");
     }
 
     private class LoginModel

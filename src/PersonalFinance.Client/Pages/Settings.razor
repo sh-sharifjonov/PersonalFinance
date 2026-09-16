@@ -1,0 +1,224 @@
+@page "/settings"
+@attribute [Authorize]
+@implements IDisposable
+@using System.Text.Json
+@using Microsoft.JSInterop
+@using PersonalFinance.Client.Auth
+@using PersonalFinance.Client.Data
+@using PersonalFinance.Client.Formatting
+@using PersonalFinance.Client.Services
+@using PersonalFinance.Client.Sync
+@using PersonalFinance.Domain.Entities
+@inject AuthenticationStateProvider AuthStateProvider
+@inject AuthService AuthService
+@inject ConnectivityService Connectivity
+@inject SyncService SyncService
+@inject SyncStateService SyncState
+@inject OutboxService Outbox
+@inject IndexedDbService IndexedDb
+@inject LocalAccountService AccountService
+@inject LocalCategoryService CategoryService
+@inject LocalTransactionService TransactionService
+@inject PreferencesService Preferences
+@inject FileDownloadService FileDownload
+@inject IJSRuntime JsRuntime
+@inject NavigationManager Navigation
+
+<PageTitle>Настройки</PageTitle>
+
+<div class="page-top">
+    <h4>Настройки</h4>
+    <SyncStatusChip />
+</div>
+
+@if (!_loaded)
+{
+    <p class="text-muted">Загрузка…</p>
+}
+else
+{
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:26px;align-items:start">
+        <div style="display:flex;flex-direction:column;gap:16px">
+            <div class="card elev-sm">
+                <span class="card-kicker">Профиль</span>
+                <div style="display:flex;align-items:center;gap:12px;margin:4px 0 8px">
+                    <span class="avatar" style="width:44px;height:44px;font-size:15px">@Format.Initials(_displayName)</span>
+                    <span><span style="font-size:15px">@_displayName</span><br><span class="text-muted" style="font-size:12px">@_email</span></span>
+                </div>
+                <div class="field"><label>Отображаемое имя</label><input class="input" value="@_displayName" disabled /></div>
+                <div class="field"><label>Email</label><input class="input" value="@_email" disabled /></div>
+                <div style="display:flex;gap:9px;margin-top:4px">
+                    <button type="button" class="btn btn-primary" disabled>Сохранить</button>
+                    <button type="button" class="btn btn-secondary" disabled>Сменить пароль</button>
+                </div>
+                <div class="text-muted" style="font-size:11px">Управление профилем появится в следующей версии.</div>
+            </div>
+            <div class="card elev-sm">
+                <span class="card-kicker">Предпочтения</span>
+                <div class="field" style="margin-top:4px"><label>Основная валюта</label><input class="input" value="USD — доллар США" disabled /></div>
+                <div class="field">
+                    <label>Первый день недели</label>
+                    <div class="seg" style="width:100%">
+                        <label class="seg-opt" style="flex:1;justify-content:center"><input type="radio" name="week-start" checked="@(_firstDayOfWeek == "monday")" @onchange='() => SetFirstDayAsync("monday")' /><span>Понедельник</span></label>
+                        <label class="seg-opt" style="flex:1;justify-content:center"><input type="radio" name="week-start" checked="@(_firstDayOfWeek == "sunday")" @onchange='() => SetFirstDayAsync("sunday")' /><span>Воскресенье</span></label>
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Счёт по умолчанию</label>
+                    <select class="input" value="@_defaultAccountId" @onchange="OnDefaultAccountChangedAsync">
+                        @foreach (var account in _accounts)
+                        {
+                            <option value="@account.Id">@account.Name</option>
+                        }
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px">
+            <div class="card elev-sm">
+                <span class="card-kicker">Синхронизация</span>
+                <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--color-divider)">Состояние <span style="color:var(--color-accent-300)">@(Connectivity.IsOnline ? "В сети" : "Офлайн")</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--color-divider)">Последняя загрузка <span class="num text-muted">@(_lastSyncedAt is { } at ? at.ToLocalTime().ToString("dd.MM.yyyy, HH:mm") : "ещё не выполнялась")</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--color-divider)">В очереди <span class="num text-muted">@_queueCount @Format.Plural(_queueCount, "запись", "записи", "записей")</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0">Разрешение конфликтов <span class="text-muted">Last-Write-Wins</span></div>
+                <div style="display:flex;gap:9px;margin-top:6px">
+                    <button type="button" class="btn btn-primary" disabled="@_isSyncing" @onclick="SyncNowAsync"><i class="ph ph-arrows-clockwise @(_isSyncing ? "spin" : "")"></i>Синхронизировать</button>
+                    <button type="button" class="btn btn-secondary" disabled title="Появится в следующей версии">Журнал</button>
+                </div>
+            </div>
+            <div class="card elev-sm">
+                <span class="card-kicker">Данные и устройство</span>
+                <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--color-divider)">Локальная база <span class="num text-muted">IndexedDB · @(_accounts.Count + _categories.Count + _transactions.Count) записей</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0">Приложение <span class="text-muted">PWA</span></div>
+                <div style="display:flex;gap:9px;margin-top:6px">
+                    <button type="button" class="btn btn-secondary" @onclick="ExportDataAsync"><i class="ph ph-download-simple"></i>Экспорт данных</button>
+                    <button type="button" class="btn btn-secondary" @onclick="ClearCacheAsync"><i class="ph ph-trash"></i>Очистить кэш</button>
+                </div>
+                @if (_cacheMessage is not null)
+                {
+                    <div class="text-muted" style="font-size:11.5px">@_cacheMessage</div>
+                }
+            </div>
+            <button type="button" class="btn btn-secondary" style="align-self:flex-start" @onclick="LogoutAsync"><i class="ph ph-sign-out"></i>Выйти</button>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Account> _accounts = new();
+    private List<Category> _categories = new();
+    private List<Transaction> _transactions = new();
+    private bool _loaded;
+    private bool _isSyncing;
+    private string _displayName = string.Empty;
+    private string _email = string.Empty;
+    private string _firstDayOfWeek = "monday";
+    private Guid _defaultAccountId;
+    private DateTime? _lastSyncedAt;
+    private int _queueCount;
+    private string? _cacheMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _displayName = state.User.Identity?.Name ?? "?";
+        _email = state.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? string.Empty;
+
+        _accounts = await AccountService.GetAllAsync();
+        _categories = await CategoryService.GetAllAsync();
+        _transactions = await TransactionService.GetAllAsync();
+
+        _firstDayOfWeek = await Preferences.GetFirstDayOfWeekAsync();
+        _defaultAccountId = await Preferences.GetDefaultAccountIdAsync() ?? _accounts.FirstOrDefault()?.Id ?? Guid.Empty;
+        _lastSyncedAt = await SyncState.GetLastPulledAtAsync();
+
+        var outboxEntries = await Outbox.GetAllAsync();
+        _queueCount = outboxEntries.Count;
+
+        SyncService.StateChanged += OnSyncStateChanged;
+        _loaded = true;
+    }
+
+    private void OnSyncStateChanged() => InvokeAsync(async () =>
+    {
+        _isSyncing = SyncService.IsSyncing;
+        if (!_isSyncing)
+        {
+            _lastSyncedAt = await SyncState.GetLastPulledAtAsync();
+            var entries = await Outbox.GetAllAsync();
+            _queueCount = entries.Count;
+        }
+
+        StateHasChanged();
+    });
+
+    private async Task SetFirstDayAsync(string value)
+    {
+        _firstDayOfWeek = value;
+        await Preferences.SetFirstDayOfWeekAsync(value);
+    }
+
+    private async Task OnDefaultAccountChangedAsync(ChangeEventArgs args)
+    {
+        if (Guid.TryParse(args.Value?.ToString(), out var id))
+        {
+            _defaultAccountId = id;
+            await Preferences.SetDefaultAccountIdAsync(id);
+        }
+    }
+
+    private async Task SyncNowAsync() => await SyncService.SyncAsync();
+
+    private async Task ExportDataAsync()
+    {
+        var payload = new
+        {
+            exportedAt = DateTime.UtcNow,
+            accounts = _accounts,
+            categories = _categories,
+            transactions = _transactions
+        };
+
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
+        await FileDownload.DownloadTextAsync($"personal-finance-export-{DateTime.Today:yyyy-MM-dd}.json", json, "application/json");
+    }
+
+    private async Task ClearCacheAsync()
+    {
+        _cacheMessage = null;
+
+        if (_queueCount > 0)
+        {
+            _cacheMessage = "Сначала синхронизируйтесь — есть несохранённые изменения.";
+            return;
+        }
+
+        var confirmed = await JsRuntime.InvokeAsync<bool>("confirm", "Удалить все локальные данные с этого устройства? Уже синхронизированные данные останутся на сервере.");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        await IndexedDb.ClearAsync("accounts");
+        await IndexedDb.ClearAsync("categories");
+        await IndexedDb.ClearAsync("transactions");
+        await IndexedDb.ClearAsync("outbox");
+
+        _ = SyncService.SyncAsync();
+        _cacheMessage = "Локальный кэш очищен. Загружаем данные с сервера…";
+        _accounts = new();
+        _categories = new();
+        _transactions = new();
+    }
+
+    private async Task LogoutAsync()
+    {
+        await AuthService.LogoutAsync();
+        Navigation.NavigateTo("/");
+    }
+
+    public void Dispose()
+    {
+        SyncService.StateChanged -= OnSyncStateChanged;
+    }
+}

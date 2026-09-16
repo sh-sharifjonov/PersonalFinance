@@ -55,3 +55,7 @@ export function put(storeName, item) {
 export function remove(storeName, id) {
     return withStore(storeName, 'readwrite', store => store.delete(id));
 }
+
+export function clear(storeName) {
+    return withStore(storeName, 'readwrite', store => store.clear());
+}

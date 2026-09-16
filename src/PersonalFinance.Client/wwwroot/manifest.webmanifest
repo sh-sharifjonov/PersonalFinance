@@ -1,11 +1,11 @@
 {
-  "name": "Personal Finance",
-  "short_name": "Finance",
+  "name": "Финансы",
+  "short_name": "Финансы",
   "id": "./",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#03173d",
+  "background_color": "#161826",
+  "theme_color": "#161826",
   "prefer_related_applications": false,
   "icons": [
     {

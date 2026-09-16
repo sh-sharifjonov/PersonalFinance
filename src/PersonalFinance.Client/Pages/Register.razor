@@ -1,49 +1,57 @@
 @page "/register"
 @using PersonalFinance.Client.Auth
+@using PersonalFinance.Client.Services
 @using PersonalFinance.Client.Sync
+@using PersonalFinance.Domain.Enums
 @inject AuthService AuthService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject SyncService SyncService
+@inject LocalAccountService AccountService
+@inject LocalCategoryService CategoryService
 @inject NavigationManager Navigation
 
-<PageTitle>Register</PageTitle>
+<PageTitle>Регистрация</PageTitle>
 
-<div class="card auth-card">
-    <div class="card-body p-4">
-        <h1 class="h3 mb-4 text-center">Create an account</h1>
+<div class="auth-shell">
+    <div class="auth-card">
+        <div class="auth-brand"><span class="brand-mark">PF</span>Финансы</div>
+        <h3>Регистрация</h3>
+        <p class="text-muted" style="font-size:13px;margin-bottom:var(--space-6)">
+            Первый счёт и базовые категории создадутся автоматически.
+        </p>
 
         <EditForm Model="_model" OnValidSubmit="RegisterAsync">
-            <div class="mb-3">
-                <label class="form-label" for="displayName">Name</label>
-                <input id="displayName" class="form-control" @bind="_model.DisplayName" required />
+            <div class="field" style="margin-bottom:14px">
+                <label>Имя</label>
+                <input class="input" @bind="_model.DisplayName" required />
             </div>
-            <div class="mb-3">
-                <label class="form-label" for="email">Email</label>
-                <input id="email" class="form-control" @bind="_model.Email" type="email" required />
+            <div class="field" style="margin-bottom:14px">
+                <label>Email</label>
+                <input class="input" type="email" @bind="_model.Email" placeholder="you@mail.uz" required />
             </div>
-            <div class="mb-3">
-                <label class="form-label" for="password">Password</label>
-                <input id="password" class="form-control" @bind="_model.Password" type="password" minlength="8" required />
-                <div class="form-text">At least 8 characters.</div>
+            <div class="field">
+                <label>Пароль</label>
+                <input class="input" type="password" @bind="_model.Password" minlength="8" placeholder="Минимум 8 символов" required />
             </div>
+            <div class="text-muted" style="font-size:11.5px;margin-top:7px">Пароль хранится только в виде хэша.</div>
 
             @if (_error is not null)
             {
-                <div class="alert alert-danger py-2">@_error</div>
+                <div class="validation-message" style="margin-top:10px">@_error</div>
             }
 
-            <button type="submit" class="btn btn-primary w-100" disabled="@_isBusy">
+            <button type="submit" class="btn btn-primary btn-block" style="margin-top:22px;padding-block:9px" disabled="@_isBusy">
                 @if (_isBusy)
                 {
-                    <span class="spinner-border spinner-border-sm me-2"></span>
+                    <i class="ph ph-spinner spin"></i>
                 }
-                Register
+                Создать аккаунт
             </button>
         </EditForm>
 
-        <p class="text-center mt-3 mb-0">
-            <a href="login">Already have an account? Log in</a>
-        </p>
+        <div style="font-size:12.5px;color:color-mix(in srgb, var(--color-text) 55%, transparent);margin-top:18px;text-align:center">
+            Уже есть аккаунт? <a href="login">Войти</a>
+        </div>
     </div>
 </div>
 
@@ -57,7 +65,7 @@
         var state = await AuthStateProvider.GetAuthenticationStateAsync();
         if (state.User.Identity?.IsAuthenticated ?? false)
         {
-            Navigation.NavigateTo("/transactions");
+            Navigation.NavigateTo("/dashboard");
         }
     }
 
@@ -75,8 +83,41 @@
             return;
         }
 
+        await SeedDefaultsAsync();
         _ = SyncService.SyncAsync();
-        Navigation.NavigateTo("/transactions");
+        Navigation.NavigateTo("/dashboard");
+    }
+
+    // The copy above promises a starter account and categories — the API has no seeding
+    // of its own, so a fresh sign-up creates them locally before landing on the dashboard.
+    private async Task SeedDefaultsAsync()
+    {
+        await AccountService.CreateAsync("Наличные", "USD", 0);
+
+        var expenseCategories = new (string Name, string Icon)[]
+        {
+            ("Жильё", "house"),
+            ("Продукты", "shopping-cart"),
+            ("Кафе", "coffee"),
+            ("Транспорт", "bus"),
+            ("Связь", "wifi-high"),
+            ("Здоровье", "heartbeat"),
+            ("Прочее", "dots-three-circle"),
+        };
+        foreach (var (name, icon) in expenseCategories)
+        {
+            await CategoryService.CreateAsync(name, CategoryType.Expense, icon, null);
+        }
+
+        var incomeCategories = new (string Name, string Icon)[]
+        {
+            ("Зарплата", "briefcase"),
+            ("Фриланс", "laptop"),
+        };
+        foreach (var (name, icon) in incomeCategories)
+        {
+            await CategoryService.CreateAsync(name, CategoryType.Income, icon, null);
+        }
     }
 
     private class RegisterModel

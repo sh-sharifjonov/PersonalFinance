@@ -1,0 +1,267 @@
+@using PersonalFinance.Client.Services
+@using PersonalFinance.Domain.Entities
+@using PersonalFinance.Domain.Enums
+@inject LocalTransactionService TransactionService
+@inject LocalAccountService AccountService
+@inject LocalCategoryService CategoryService
+
+@if (IsOpen)
+{
+    <div class="txn-backdrop" @onclick="Close">
+        <div class="txn-panel" @onclick:stopPropagation="true">
+            <div style="display:flex;align-items:center;gap:10px">
+                <button type="button" class="btn btn-icon btn-secondary" @onclick="Close" aria-label="Закрыть"><i class="ph ph-x"></i></button>
+                <span class="dialog-title" style="font-size:16px">@(_editingId is null ? "Новая операция" : "Изменить операцию")</span>
+            </div>
+
+            @if (_editingId is null)
+            {
+                <div class="seg" style="width:100%">
+                    <label class="seg-opt" style="flex:1;justify-content:center"><input type="radio" name="txn-kind" checked="@(_kind == Kind.Expense)" @onchange="() => SetKind(Kind.Expense)" /><span>Расход</span></label>
+                    <label class="seg-opt" style="flex:1;justify-content:center"><input type="radio" name="txn-kind" checked="@(_kind == Kind.Income)" @onchange="() => SetKind(Kind.Income)" /><span>Доход</span></label>
+                    <label class="seg-opt" style="flex:1;justify-content:center"><input type="radio" name="txn-kind" checked="@(_kind == Kind.Transfer)" @onchange="() => SetKind(Kind.Transfer)" /><span>Перевод</span></label>
+                </div>
+            }
+
+            <div class="field">
+                <label>Сумма, USD</label>
+                <input class="input num" type="number" step="0.01" min="0.01" style="font-size:28px;height:auto;padding:10px 12px;color:var(--color-accent)" @bind="_amount" />
+            </div>
+
+            @if (_kind == Kind.Transfer)
+            {
+                <div class="field">
+                    <label>Откуда</label>
+                    <select class="input" @bind="_fromAccountId">
+                        @foreach (var account in Accounts)
+                        {
+                            <option value="@account.Id">@account.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Куда</label>
+                    <select class="input" @bind="_toAccountId">
+                        @foreach (var account in Accounts)
+                        {
+                            <option value="@account.Id">@account.Name</option>
+                        }
+                    </select>
+                </div>
+                @if (_fromAccountId == _toAccountId)
+                {
+                    <div class="validation-message">Выберите разные счета.</div>
+                }
+            }
+            else
+            {
+                <div class="field">
+                    <label>Категория</label>
+                    <div style="display:flex;flex-wrap:wrap;gap:7px">
+                        @foreach (var category in CategoriesForKind)
+                        {
+                            <button type="button" class="tag @(category.Id == _categoryId ? "tag-accent" : "tag-neutral")" style="padding:6px 11px;font-size:12px" @onclick="() => _categoryId = category.Id">@category.Name</button>
+                        }
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Счёт</label>
+                    <select class="input" @bind="_accountId">
+                        @foreach (var account in Accounts)
+                        {
+                            <option value="@account.Id">@account.Name</option>
+                        }
+                    </select>
+                </div>
+            }
+
+            <div class="field">
+                <label>Дата</label>
+                <input class="input" type="date" @bind="_date" />
+            </div>
+            <div class="field">
+                <label>Заметка</label>
+                <input class="input" @bind="_note" placeholder="Необязательно" />
+            </div>
+
+            @if (_error is not null)
+            {
+                <div class="validation-message">@_error</div>
+            }
+
+            <div style="display:flex;flex-direction:column;gap:9px;margin-top:4px">
+                <span class="chip" style="align-self:flex-start"><i class="ph ph-arrows-clockwise"></i>Сохранится локально, отправится при сети</span>
+                <button type="button" class="btn btn-primary btn-block" style="padding-block:10px" disabled="@_isBusy" @onclick="SaveAsync">Сохранить</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private enum Kind { Expense, Income, Transfer }
+
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public Transaction? EditingTransaction { get; set; }
+    [Parameter] public List<Account> Accounts { get; set; } = new();
+    [Parameter] public List<Category> Categories { get; set; } = new();
+    [Parameter] public Guid? DefaultAccountId { get; set; }
+    [Parameter] public bool StartAsTransfer { get; set; }
+
+    private Guid? _editingId;
+    private Kind _kind = Kind.Expense;
+    private decimal _amount;
+    private Guid _categoryId;
+    private Guid _accountId;
+    private Guid _fromAccountId;
+    private Guid _toAccountId;
+    private DateOnly _date = DateOnly.FromDateTime(DateTime.Today);
+    private string? _note;
+    private string? _error;
+    private bool _isBusy;
+    private bool _wasOpen;
+
+    private IEnumerable<Category> CategoriesForKind
+    {
+        get
+        {
+            var type = _kind == Kind.Income ? CategoryType.Income : CategoryType.Expense;
+            return Categories.Where(c => c.Type == type);
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (IsOpen && !_wasOpen)
+        {
+            ResetForm();
+        }
+
+        _wasOpen = IsOpen;
+    }
+
+    private void ResetForm()
+    {
+        _error = null;
+        _editingId = EditingTransaction?.Id;
+
+        if (EditingTransaction is { } transaction)
+        {
+            _kind = transaction.Type == TransactionType.Income ? Kind.Income : Kind.Expense;
+            _amount = transaction.Amount;
+            _categoryId = transaction.CategoryId;
+            _accountId = transaction.AccountId;
+            _date = transaction.Date;
+            _note = transaction.Note;
+        }
+        else
+        {
+            _kind = Kind.Expense;
+            _amount = 0;
+            _date = DateOnly.FromDateTime(DateTime.Today);
+            _note = null;
+            _accountId = DefaultAccountId ?? Accounts.FirstOrDefault()?.Id ?? Guid.Empty;
+            _fromAccountId = _accountId;
+            _toAccountId = Accounts.Select(a => a.Id).FirstOrDefault(id => id != _fromAccountId);
+            SetKind(StartAsTransfer ? Kind.Transfer : Kind.Expense);
+        }
+    }
+
+    private void SetKind(Kind kind)
+    {
+        _kind = kind;
+        if (kind != Kind.Transfer)
+        {
+            var firstMatching = CategoriesForKindFor(kind).FirstOrDefault();
+            _categoryId = firstMatching?.Id ?? Guid.Empty;
+        }
+    }
+
+    private IEnumerable<Category> CategoriesForKindFor(Kind kind)
+    {
+        var type = kind == Kind.Income ? CategoryType.Income : CategoryType.Expense;
+        return Categories.Where(c => c.Type == type);
+    }
+
+    private async Task Close()
+    {
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+
+        if (_amount <= 0)
+        {
+            _error = "Введите сумму больше нуля.";
+            return;
+        }
+
+        _isBusy = true;
+        try
+        {
+            if (_kind == Kind.Transfer)
+            {
+                if (_fromAccountId == Guid.Empty || _toAccountId == Guid.Empty || _fromAccountId == _toAccountId)
+                {
+                    _error = "Выберите разные счета для перевода.";
+                    return;
+                }
+
+                var fromAccount = Accounts.First(a => a.Id == _fromAccountId);
+                var toAccount = Accounts.First(a => a.Id == _toAccountId);
+                var expenseCategoryId = await EnsureTransferCategoryAsync(CategoryType.Expense);
+                var incomeCategoryId = await EnsureTransferCategoryAsync(CategoryType.Income);
+                var note = string.IsNullOrWhiteSpace(_note) ? $"Перевод: {fromAccount.Name} → {toAccount.Name}" : _note;
+
+                await TransactionService.CreateAsync(_fromAccountId, expenseCategoryId, TransactionType.Expense, _amount, _date, note);
+                await TransactionService.CreateAsync(_toAccountId, incomeCategoryId, TransactionType.Income, _amount, _date, note);
+            }
+            else
+            {
+                if (_categoryId == Guid.Empty || _accountId == Guid.Empty)
+                {
+                    _error = "Выберите счёт и категорию.";
+                    return;
+                }
+
+                var type = _kind == Kind.Income ? TransactionType.Income : TransactionType.Expense;
+                var note = string.IsNullOrWhiteSpace(_note) ? null : _note;
+
+                if (_editingId is { } id)
+                {
+                    await TransactionService.UpdateAsync(id, _accountId, _categoryId, type, _amount, _date, note);
+                }
+                else
+                {
+                    await TransactionService.CreateAsync(_accountId, _categoryId, type, _amount, _date, note);
+                }
+            }
+
+            await OnSaved.InvokeAsync();
+            await OnClose.InvokeAsync();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // The domain has no first-class "transfer" concept — a transfer is modeled as a
+    // matched expense + income pair tagged with a shared "Перевод" category per side,
+    // created on first use so this works without a schema change.
+    private async Task<Guid> EnsureTransferCategoryAsync(CategoryType type)
+    {
+        var existing = Categories.FirstOrDefault(c => c.Type == type && c.Name == "Перевод");
+        if (existing is not null)
+        {
+            return existing.Id;
+        }
+
+        var created = await CategoryService.CreateAsync("Перевод", type, "arrows-left-right", null);
+        Categories.Add(created);
+        return created.Id;
+    }
+}

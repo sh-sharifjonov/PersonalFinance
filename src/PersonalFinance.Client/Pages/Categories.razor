@@ -1,148 +1,170 @@
 @page "/categories"
 @attribute [Authorize]
 @using PersonalFinance.Client.Services
+@using PersonalFinance.Client.Formatting
 @using PersonalFinance.Domain.Entities
 @using PersonalFinance.Domain.Enums
 @inject LocalCategoryService CategoryService
+@inject LocalTransactionService TransactionService
 
-<PageTitle>Categories</PageTitle>
+<PageTitle>Категории</PageTitle>
 
-<h1 class="h3 mb-3">Categories</h1>
-
-<div class="card mb-4">
-    <div class="card-body">
-        <h2 class="h6 text-uppercase text-muted mb-3">@(_editingId is null ? "Add category" : "Edit category")</h2>
-        <EditForm Model="_formModel" OnValidSubmit="SaveCategoryAsync">
-            <div class="row g-2 align-items-end">
-                <div class="col-md-6">
-                    <label class="form-label">Name</label>
-                    <input class="form-control" @bind="_formModel.Name" required />
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Type</label>
-                    <select class="form-select" @bind="_formModel.Type">
-                        <option value="@CategoryType.Expense">Expense</option>
-                        <option value="@CategoryType.Income">Income</option>
-                    </select>
-                </div>
-                <div class="col-md-2 d-grid">
-                    <button type="submit" class="btn btn-primary">@(_editingId is null ? "Add" : "Save")</button>
-                </div>
-            </div>
-            @if (_editingId is not null)
-            {
-                <button type="button" class="btn btn-link btn-sm mt-2 p-0" @onclick="CancelEdit">Cancel edit</button>
-            }
-        </EditForm>
-    </div>
+<div class="page-top">
+    <h4>Категории</h4>
+    <SyncStatusChip />
 </div>
 
-@if (_categories is null)
+@if (!_loaded)
 {
-    <p class="text-muted">Loading...</p>
-}
-else if (_categories.Count == 0)
-{
-    <div class="empty-state">No categories yet. Add your first one above.</div>
+    <p class="text-muted">Загрузка…</p>
 }
 else
 {
-    <div class="card">
-        <div class="table-responsive">
-            <table class="table align-middle mb-0">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Type</th>
-                        <th class="text-end">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var category in _categories)
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:34px;align-items:start">
+        <div>
+            <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:6px">
+                <span style="font-size:13px">Расходы</span>
+                <span class="text-muted" style="font-size:11.5px">@ExpenseCategories.Count @Format.Plural(ExpenseCategories.Count, "категория", "категории", "категорий")</span>
+            </div>
+            @if (ExpenseCategories.Count == 0)
+            {
+                <p class="text-muted" style="font-size:13px">Пока нет категорий расходов.</p>
+            }
+            @foreach (var category in ExpenseCategories)
+            {
+                <div class="txn-row" style="grid-template-columns:34px 1fr auto auto;gap:11px">
+                    <span class="icon-tile"><i class="ph ph-@Format.CategoryIcon(category.Icon)"></i></span>
+                    <span class="txn-title">@category.Name</span>
+                    <span class="num text-muted" style="font-size:12.5px">@Format.Money(MonthTotal(category.Id)) / мес</span>
+                    <button type="button" class="btn btn-icon btn-ghost" @onclick="() => StartEdit(category)"><i class="ph ph-pencil-simple"></i></button>
+                </div>
+            }
+        </div>
+        <div>
+            <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:6px">
+                <span style="font-size:13px">Доходы</span>
+                <span class="text-muted" style="font-size:11.5px">@IncomeCategories.Count @Format.Plural(IncomeCategories.Count, "категория", "категории", "категорий")</span>
+            </div>
+            @if (IncomeCategories.Count == 0)
+            {
+                <p class="text-muted" style="font-size:13px">Пока нет категорий доходов.</p>
+            }
+            @foreach (var category in IncomeCategories)
+            {
+                <div class="txn-row" style="grid-template-columns:34px 1fr auto auto;gap:11px">
+                    <span class="icon-tile"><i class="ph ph-@Format.CategoryIcon(category.Icon)"></i></span>
+                    <span class="txn-title">@category.Name</span>
+                    <span class="num amount-in" style="font-size:12.5px">@Format.Money(MonthTotal(category.Id)) / мес</span>
+                    <button type="button" class="btn btn-icon btn-ghost" @onclick="() => StartEdit(category)"><i class="ph ph-pencil-simple"></i></button>
+                </div>
+            }
+
+            <hr class="hr" />
+
+            <div class="card elev-sm">
+                <span class="card-kicker">@(_editingId is null ? "Новая категория" : "Изменить категорию")</span>
+                <EditForm Model="_form" OnValidSubmit="SaveAsync">
+                    <div class="field" style="margin-top:4px"><label>Название</label><input class="input" @bind="_form.Name" placeholder="Например, Подписки" required /></div>
+                    <div class="field">
+                        <label>Тип</label>
+                        <div class="seg" style="width:100%">
+                            <label class="seg-opt" style="flex:1;justify-content:center"><input type="radio" name="cat-type" checked="@(_form.Type == CategoryType.Expense)" @onchange="() => _form.Type = CategoryType.Expense" /><span>Расход</span></label>
+                            <label class="seg-opt" style="flex:1;justify-content:center"><input type="radio" name="cat-type" checked="@(_form.Type == CategoryType.Income)" @onchange="() => _form.Type = CategoryType.Income" /><span>Доход</span></label>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>Иконка</label>
+                        <div style="display:flex;gap:7px;flex-wrap:wrap">
+                            @foreach (var icon in IconChoices)
+                            {
+                                <button type="button" class="icon-tile @(icon == _form.Icon ? "is-selected" : "")" @onclick="() => _form.Icon = icon"><i class="ph ph-@icon"></i></button>
+                            }
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:9px">
+                        <button type="submit" class="btn btn-primary btn-block">@(_editingId is null ? "Добавить" : "Сохранить")</button>
+                        @if (_editingId is not null)
+                        {
+                            <button type="button" class="btn btn-secondary" @onclick="CancelEdit">Отмена</button>
+                        }
+                    </div>
+                    @if (_editingId is { } id)
                     {
-                        <tr>
-                            <td>@category.Name</td>
-                            <td>
-                                <span class="badge @(category.Type == CategoryType.Income ? "bg-success" : "bg-danger")">
-                                    @category.Type
-                                </span>
-                            </td>
-                            <td class="text-end">
-                                <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => StartEdit(category)">Edit</button>
-                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteCategoryAsync(category.Id)">Delete</button>
-                            </td>
-                        </tr>
+                        <button type="button" class="btn btn-danger btn-block" @onclick="() => DeleteAsync(id)">Удалить категорию</button>
                     }
-                </tbody>
-            </table>
+                </EditForm>
+            </div>
         </div>
     </div>
 }
 
 @code {
-    private List<Category>? _categories;
-    private Guid? _editingId;
-    private CategoryFormModel _formModel = new();
-
-    protected override async Task OnInitializedAsync()
+    private static readonly string[] IconChoices =
     {
-        await LoadAsync();
-    }
+        "house", "shopping-cart", "coffee", "bus", "wifi-high", "heartbeat", "briefcase", "laptop",
+        "repeat", "game-controller", "gift", "airplane-tilt", "book-open", "dots-three-circle"
+    };
+
+    private List<Category> _categories = new();
+    private List<Transaction> _transactions = new();
+    private bool _loaded;
+    private Guid? _editingId;
+    private CategoryForm _form = new();
+
+    private List<Category> ExpenseCategories => _categories.Where(c => c.Type == CategoryType.Expense).ToList();
+    private List<Category> IncomeCategories => _categories.Where(c => c.Type == CategoryType.Income).ToList();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
 
     private async Task LoadAsync()
     {
         _categories = await CategoryService.GetAllAsync();
+        _transactions = await TransactionService.GetAllAsync();
+        _loaded = true;
     }
+
+    private decimal MonthTotal(Guid categoryId) => _transactions
+        .Where(t => t.CategoryId == categoryId && t.Date.Year == DateTime.Today.Year && t.Date.Month == DateTime.Today.Month)
+        .Sum(t => t.Amount);
 
     private void StartEdit(Category category)
     {
         _editingId = category.Id;
-        _formModel = new CategoryFormModel
-        {
-            Name = category.Name,
-            Type = category.Type,
-            Icon = category.Icon,
-            Color = category.Color
-        };
+        _form = new CategoryForm { Name = category.Name, Type = category.Type, Icon = Format.CategoryIcon(category.Icon) };
     }
 
     private void CancelEdit()
     {
         _editingId = null;
-        _formModel = new CategoryFormModel();
+        _form = new CategoryForm();
     }
 
-    private async Task SaveCategoryAsync()
+    private async Task SaveAsync()
     {
         if (_editingId is { } id)
         {
-            await CategoryService.UpdateAsync(id, _formModel.Name, _formModel.Type, _formModel.Icon, _formModel.Color);
+            await CategoryService.UpdateAsync(id, _form.Name, _form.Type, _form.Icon, null);
         }
         else
         {
-            await CategoryService.CreateAsync(_formModel.Name, _formModel.Type, _formModel.Icon, _formModel.Color);
+            await CategoryService.CreateAsync(_form.Name, _form.Type, _form.Icon, null);
         }
 
         CancelEdit();
         await LoadAsync();
     }
 
-    private async Task DeleteCategoryAsync(Guid id)
+    private async Task DeleteAsync(Guid id)
     {
-        if (_editingId == id)
-        {
-            CancelEdit();
-        }
-
         await CategoryService.DeleteAsync(id);
+        CancelEdit();
         await LoadAsync();
     }
 
-    private class CategoryFormModel
+    private class CategoryForm
     {
         public string Name { get; set; } = string.Empty;
         public CategoryType Type { get; set; } = CategoryType.Expense;
-        public string? Icon { get; set; }
-        public string? Color { get; set; }
+        public string Icon { get; set; } = "tag";
     }
 }

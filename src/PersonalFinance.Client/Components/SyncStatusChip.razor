@@ -1,0 +1,101 @@
+@implements IAsyncDisposable
+@using System.Threading
+@using PersonalFinance.Client.Formatting
+@using PersonalFinance.Client.Sync
+@inject ConnectivityService Connectivity
+@inject SyncService Sync
+@inject OutboxService Outbox
+
+@if (_state == State.Offline)
+{
+    <span class="chip"><i class="ph ph-wifi-slash"></i>Офлайн · @_queueCount в очереди</span>
+}
+else if (_state == State.Syncing)
+{
+    <span class="chip is-accent"><i class="ph ph-arrows-clockwise" style="color:var(--color-accent)"></i>Синхронизация… @_queueCount @PluralRecords(_queueCount)</span>
+}
+else if (_state == State.Failed)
+{
+    <span class="chip is-warn"><i class="ph ph-warning-circle"></i>Не удалось · повтор через 30 с</span>
+}
+else
+{
+    <span class="chip"><i class="ph ph-cloud-check" style="color:var(--color-accent)"></i>Синхронизировано</span>
+}
+
+@code {
+    private enum State { Synced, Syncing, Offline, Failed }
+
+    private State _state = State.Synced;
+    private int _queueCount;
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Connectivity.OnlineStatusChanged += OnConnectivityChanged;
+        Sync.StateChanged += OnSyncStateChanged;
+
+        await RefreshAsync();
+
+        _cts = new CancellationTokenSource();
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(4));
+        _ = PollAsync(_cts.Token);
+    }
+
+    private async Task PollAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (_timer is not null && await _timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await RefreshAsync();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Component disposed mid-wait — nothing to do.
+        }
+    }
+
+    private void OnConnectivityChanged(bool _) => InvokeAsync(async () =>
+    {
+        await RefreshAsync();
+        StateHasChanged();
+    });
+
+    private void OnSyncStateChanged() => InvokeAsync(async () =>
+    {
+        await RefreshAsync();
+        StateHasChanged();
+    });
+
+    private async Task RefreshAsync()
+    {
+        var entries = await Outbox.GetAllAsync();
+        _queueCount = entries.Count;
+
+        _state = !Connectivity.IsOnline
+            ? State.Offline
+            : Sync.IsSyncing
+                ? State.Syncing
+                : Sync.LastError is not null
+                    ? State.Failed
+                    : State.Synced;
+    }
+
+    private static string PluralRecords(int count) => Format.Plural(count, "запись", "записи", "записей");
+
+    public async ValueTask DisposeAsync()
+    {
+        Connectivity.OnlineStatusChanged -= OnConnectivityChanged;
+        Sync.StateChanged -= OnSyncStateChanged;
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _timer?.Dispose();
+    }
+}

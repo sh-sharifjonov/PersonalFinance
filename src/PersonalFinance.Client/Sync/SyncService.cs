@@ -21,6 +21,14 @@ public class SyncService
 
     private static readonly SemaphoreSlim SyncLock = new(1, 1);
 
+    // Drives the sync status chip: whether a push/pull round is in flight right now,
+    // and the message from the most recent failed round (cleared on the next success).
+    public bool IsSyncing { get; private set; }
+
+    public string? LastError { get; private set; }
+
+    public event Action? StateChanged;
+
     public async Task SyncAsync(CancellationToken cancellationToken = default)
     {
         if (!await SyncLock.WaitAsync(0, cancellationToken))
@@ -28,20 +36,27 @@ public class SyncService
             return;
         }
 
+        IsSyncing = true;
+        StateChanged?.Invoke();
+
         try
         {
             await PushAsync(cancellationToken);
             await PullAsync(cancellationToken);
+            LastError = null;
         }
         catch (Exception ex)
         {
             // The Api being unreachable (offline, not yet started, CORS) is an expected,
             // recurring condition here, not a fatal error — log and retry on the next trigger.
             Console.Error.WriteLine($"Sync failed: {ex.Message}");
+            LastError = ex.Message;
         }
         finally
         {
+            IsSyncing = false;
             SyncLock.Release();
+            StateChanged?.Invoke();
         }
     }
 

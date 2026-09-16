@@ -1,141 +1,209 @@
 @page "/accounts"
 @attribute [Authorize]
+@implements IDisposable
 @using PersonalFinance.Client.Services
+@using PersonalFinance.Client.Formatting
 @using PersonalFinance.Domain.Entities
+@using PersonalFinance.Domain.Enums
 @inject LocalAccountService AccountService
+@inject LocalTransactionService TransactionService
+@inject TransactionDialogService DialogService
 
-<PageTitle>Accounts</PageTitle>
+<PageTitle>Счета</PageTitle>
 
-<h1 class="h3 mb-3">Accounts</h1>
-
-<div class="card mb-4">
-    <div class="card-body">
-        <h2 class="h6 text-uppercase text-muted mb-3">@(_editingId is null ? "Add account" : "Edit account")</h2>
-        <EditForm Model="_formModel" OnValidSubmit="SaveAccountAsync">
-            <div class="row g-2 align-items-end">
-                <div class="col-md-5">
-                    <label class="form-label">Name</label>
-                    <input class="form-control" @bind="_formModel.Name" required />
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label">Currency</label>
-                    <input class="form-control" @bind="_formModel.Currency" required />
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label">Initial balance</label>
-                    <input type="number" step="0.01" class="form-control" @bind="_formModel.InitialBalance" />
-                </div>
-                <div class="col-md-1 d-grid">
-                    <button type="submit" class="btn btn-primary">@(_editingId is null ? "Add" : "Save")</button>
-                </div>
-            </div>
-            @if (_editingId is not null)
-            {
-                <button type="button" class="btn btn-link btn-sm mt-2 p-0" @onclick="CancelEdit">Cancel edit</button>
-            }
-        </EditForm>
-    </div>
+<div class="page-top">
+    <h4>Счета</h4>
+    <SyncStatusChip />
+    <button type="button" class="btn btn-secondary" disabled="@(_accounts.Count < 2)" @onclick="DialogService.OpenNewTransfer"><i class="ph ph-arrows-left-right"></i>Перевод</button>
+    <button type="button" class="btn btn-primary" @onclick="ToggleForm"><i class="ph ph-plus"></i>Новый счёт</button>
 </div>
 
-@if (_accounts is null)
+@if (!_loaded)
 {
-    <p class="text-muted">Loading...</p>
-}
-else if (_accounts.Count == 0)
-{
-    <div class="empty-state">No accounts yet. Add your first one above.</div>
+    <p class="text-muted">Загрузка…</p>
 }
 else
 {
-    <div class="card">
-        <div class="table-responsive">
-            <table class="table align-middle mb-0">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Currency</th>
-                        <th class="text-end">Initial balance</th>
-                        <th class="text-end">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var account in _accounts)
+    @if (_showForm)
+    {
+        <div class="card elev-sm">
+            <span class="card-kicker">@(_editingId is null ? "Новый счёт" : "Изменить счёт")</span>
+            <EditForm Model="_form" OnValidSubmit="SaveAsync">
+                <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
+                    <div class="field"><label>Название</label><input class="input" @bind="_form.Name" required /></div>
+                    <div class="field"><label>Валюта</label><input class="input" @bind="_form.Currency" required /></div>
+                    <div class="field"><label>Начальный баланс</label><input class="input num" type="number" step="0.01" @bind="_form.InitialBalance" /></div>
+                </div>
+                <div style="display:flex;gap:9px;margin-top:4px">
+                    <button type="submit" class="btn btn-primary">@(_editingId is null ? "Добавить" : "Сохранить")</button>
+                    <button type="button" class="btn btn-secondary" @onclick="CancelForm">Отмена</button>
+                    @if (_editingId is { } id)
                     {
-                        <tr>
-                            <td>@account.Name</td>
-                            <td>@account.Currency</td>
-                            <td class="text-end">@account.InitialBalance.ToString("N2")</td>
-                            <td class="text-end">
-                                <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => StartEdit(account)">Edit</button>
-                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAccountAsync(account.Id)">Delete</button>
-                            </td>
-                        </tr>
+                        <button type="button" class="btn btn-danger" style="margin-left:auto" @onclick="() => DeleteAsync(id)">Удалить счёт</button>
                     }
-                </tbody>
-            </table>
+                </div>
+            </EditForm>
         </div>
-    </div>
+    }
+
+    @if (_accounts.Count == 0)
+    {
+        <div class="empty-state">
+            <span class="icon-tile" style="width:48px;height:48px;font-size:22px"><i class="ph ph-wallet"></i></span>
+            <div style="font-size:16px">Пока нет ни одного счёта</div>
+            <p class="text-muted">Добавьте счёт кнопкой выше.</p>
+        </div>
+    }
+    else
+    {
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px">
+            @foreach (var account in _accounts)
+            {
+                <div class="card elev-sm">
+                    <div style="display:flex;align-items:center;gap:10px">
+                        <span class="icon-tile"><i class="ph ph-@AccountIcon(account.Name)"></i></span>
+                        <span class="card-title">@account.Name</span>
+                        <button type="button" class="btn btn-icon btn-ghost" style="margin-left:auto" title="Изменить" @onclick="() => StartEdit(account)"><i class="ph ph-pencil-simple"></i></button>
+                    </div>
+                    <span class="num" style="font-size:24px">@Format.Money(AccountBalance(account))</span>
+                    <span class="card-meta">@account.Currency · @TransactionCount(account.Id) @Format.Plural(TransactionCount(account.Id), "операция", "операции", "операций") · начальный @Format.Money(account.InitialBalance)</span>
+                </div>
+            }
+        </div>
+
+        <hr class="hr" />
+
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:26px;align-items:start">
+            <div>
+                <div class="kpi-label" style="margin-bottom:8px">Движение по счетам · @Format.MonthName(DateTime.Today.Month)</div>
+                <table class="table">
+                    <thead><tr><th>Счёт</th><th style="text-align:right">Поступления</th><th style="text-align:right">Списания</th><th style="text-align:right">Баланс</th></tr></thead>
+                    <tbody>
+                        @foreach (var account in _accounts)
+                        {
+                            <tr>
+                                <td>@account.Name</td>
+                                <td class="num amount-in" style="text-align:right">+@Format.Money(MonthIncoming(account.Id))</td>
+                                <td class="num" style="text-align:right">@Format.Money(-MonthOutgoing(account.Id))</td>
+                                <td class="num" style="text-align:right">@Format.Money(AccountBalance(account))</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="card elev-sm">
+                <span class="card-kicker">Перевод</span>
+                <p class="card-body">Переместите деньги между своими счетами — операция создаст расход на одном счёте и доход на другом.</p>
+                <button type="button" class="btn btn-primary btn-block" disabled="@(_accounts.Count < 2)" @onclick="DialogService.OpenNewTransfer">Перевести</button>
+            </div>
+        </div>
+    }
 }
 
 @code {
-    private List<Account>? _accounts;
+    private List<Account> _accounts = new();
+    private List<Transaction> _transactions = new();
+    private bool _loaded;
+    private bool _showForm;
     private Guid? _editingId;
-    private AccountFormModel _formModel = new();
+    private AccountForm _form = new();
 
     protected override async Task OnInitializedAsync()
     {
+        DialogService.Saved += OnSaved;
         await LoadAsync();
     }
+
+    private void OnSaved() => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
 
     private async Task LoadAsync()
     {
         _accounts = await AccountService.GetAllAsync();
+        _transactions = await TransactionService.GetAllAsync();
+        _loaded = true;
+    }
+
+    private void ToggleForm()
+    {
+        if (_showForm && _editingId is null)
+        {
+            _showForm = false;
+            return;
+        }
+
+        _editingId = null;
+        _form = new AccountForm { Currency = "USD" };
+        _showForm = true;
     }
 
     private void StartEdit(Account account)
     {
         _editingId = account.Id;
-        _formModel = new AccountFormModel
-        {
-            Name = account.Name,
-            Currency = account.Currency,
-            InitialBalance = account.InitialBalance
-        };
+        _form = new AccountForm { Name = account.Name, Currency = account.Currency, InitialBalance = account.InitialBalance };
+        _showForm = true;
     }
 
-    private void CancelEdit()
+    private void CancelForm()
     {
+        _showForm = false;
         _editingId = null;
-        _formModel = new AccountFormModel();
     }
 
-    private async Task SaveAccountAsync()
+    private async Task SaveAsync()
     {
         if (_editingId is { } id)
         {
-            await AccountService.UpdateAsync(id, _formModel.Name, _formModel.Currency, _formModel.InitialBalance);
+            await AccountService.UpdateAsync(id, _form.Name, _form.Currency, _form.InitialBalance);
         }
         else
         {
-            await AccountService.CreateAsync(_formModel.Name, _formModel.Currency, _formModel.InitialBalance);
+            await AccountService.CreateAsync(_form.Name, _form.Currency, _form.InitialBalance);
         }
 
-        CancelEdit();
+        CancelForm();
         await LoadAsync();
     }
 
-    private async Task DeleteAccountAsync(Guid id)
+    private async Task DeleteAsync(Guid id)
     {
-        if (_editingId == id)
-        {
-            CancelEdit();
-        }
-
         await AccountService.DeleteAsync(id);
+        CancelForm();
         await LoadAsync();
     }
 
-    private class AccountFormModel
+    private decimal AccountBalance(Account account) =>
+        account.InitialBalance + _transactions
+            .Where(t => t.AccountId == account.Id)
+            .Sum(t => t.Type == TransactionType.Income ? t.Amount : -t.Amount);
+
+    private int TransactionCount(Guid accountId) => _transactions.Count(t => t.AccountId == accountId);
+
+    private decimal MonthIncoming(Guid accountId) => _transactions
+        .Where(t => t.AccountId == accountId && t.Type == TransactionType.Income && IsThisMonth(t.Date))
+        .Sum(t => t.Amount);
+
+    private decimal MonthOutgoing(Guid accountId) => _transactions
+        .Where(t => t.AccountId == accountId && t.Type == TransactionType.Expense && IsThisMonth(t.Date))
+        .Sum(t => t.Amount);
+
+    private static bool IsThisMonth(DateOnly date) => date.Year == DateTime.Today.Year && date.Month == DateTime.Today.Month;
+
+    private static string AccountIcon(string name) => name.Contains("нал", StringComparison.OrdinalIgnoreCase)
+        ? "money"
+        : name.Contains("сбереж", StringComparison.OrdinalIgnoreCase) || name.Contains("saving", StringComparison.OrdinalIgnoreCase)
+            ? "piggy-bank"
+            : "credit-card";
+
+    public void Dispose()
+    {
+        DialogService.Saved -= OnSaved;
+    }
+
+    private class AccountForm
     {
         public string Name { get; set; } = string.Empty;
         public string Currency { get; set; } = "USD";

@@ -1,0 +1,436 @@
+@page "/dashboard"
+@attribute [Authorize]
+@implements IDisposable
+@using System.Globalization
+@using PersonalFinance.Client.Services
+@using PersonalFinance.Client.Formatting
+@using PersonalFinance.Domain.Entities
+@using PersonalFinance.Domain.Enums
+@inject LocalAccountService AccountService
+@inject LocalCategoryService CategoryService
+@inject LocalTransactionService TransactionService
+@inject PreferencesService Preferences
+@inject TransactionDialogService DialogService
+
+<PageTitle>Обзор</PageTitle>
+
+<div class="page-top">
+    <h4>Обзор</h4>
+    <div class="seg dashboard-switch">
+        <label class="seg-opt"><input type="radio" name="dash-layout" checked="@(_layout == "cards")" @onchange='() => SetLayoutAsync("cards")' /><span>Карточки</span></label>
+        <label class="seg-opt"><input type="radio" name="dash-layout" checked="@(_layout == "hero")" @onchange='() => SetLayoutAsync("hero")' /><span>Баланс</span></label>
+        <label class="seg-opt"><input type="radio" name="dash-layout" checked="@(_layout == "table")" @onchange='() => SetLayoutAsync("table")' /><span>Таблица</span></label>
+    </div>
+    <SyncStatusChip />
+    <button type="button" class="btn btn-primary hide-on-mobile" @onclick="DialogService.OpenNew"><i class="ph ph-plus"></i>Новая операция</button>
+</div>
+
+@if (!_loaded)
+{
+    <p class="text-muted">Загрузка…</p>
+}
+else if (_accounts.Count == 0)
+{
+    <div class="empty-state">
+        <span class="icon-tile" style="width:48px;height:48px;font-size:22px"><i class="ph ph-wallet"></i></span>
+        <div style="font-size:16px">Пока нет ни одного счёта</div>
+        <p class="text-muted" style="max-width:320px">Добавьте <a href="accounts">счёт</a>, чтобы начать вести операции.</p>
+    </div>
+}
+else if (_categories.Count == 0)
+{
+    <div class="empty-state">
+        <span class="icon-tile" style="width:48px;height:48px;font-size:22px"><i class="ph ph-tag"></i></span>
+        <div style="font-size:16px">Пока нет ни одной категории</div>
+        <p class="text-muted" style="max-width:320px">Добавьте <a href="categories">категорию</a>, чтобы начать вести операции.</p>
+    </div>
+}
+else if (_transactions.Count == 0)
+{
+    <div class="empty-state">
+        <span class="icon-tile" style="width:48px;height:48px;font-size:22px"><i class="ph ph-receipt"></i></span>
+        <div style="font-size:16px">Пока ни одной операции</div>
+        <p class="text-muted" style="max-width:320px">Добавьте первый расход или доход — он сохранится на устройстве даже без интернета.</p>
+        <button type="button" class="btn btn-primary" @onclick="DialogService.OpenNew"><i class="ph ph-plus"></i>Новая операция</button>
+    </div>
+}
+else
+{
+    <div class="dashboard-desktop" style="display:flex;flex-direction:column;gap:18px">
+        @if (_layout == "cards")
+        {
+            <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px">
+                <div class="kpi"><span class="kpi-label">Общий баланс</span><span class="num" style="font-size:28px">@Format.Money(TotalBalance)</span><span class="text-muted" style="font-size:11.5px">@_accounts.Count @Format.Plural(_accounts.Count, "счёт", "счёта", "счетов") · USD</span></div>
+                <div class="kpi"><span class="kpi-label">Доходы · @Format.MonthName(DateTime.Today.Month)</span><span class="num amount-in" style="font-size:28px">+@Format.Money(MonthIncome)</span><span class="text-muted" style="font-size:11.5px">@MonthIncomeCount @Format.Plural(MonthIncomeCount, "операция", "операции", "операций")</span></div>
+                <div class="kpi"><span class="kpi-label">Расходы · @Format.MonthName(DateTime.Today.Month)</span><span class="num" style="font-size:28px">@Format.Money(-MonthExpense)</span><span class="text-muted" style="font-size:11.5px">@ExpenseShareOfIncome% от дохода</span></div>
+            </div>
+
+            <div style="background:var(--color-surface);border-radius:var(--radius-md);padding:16px 18px">
+                <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:14px">
+                    <span style="font-size:13px">Расходы по дням</span>
+                    <span class="text-muted" style="font-size:11.5px">@Format.MonthName(DateTime.Today.Month) @DateTime.Today.Year</span>
+                    <div class="seg" style="margin-left:auto">
+                        <label class="seg-opt"><input type="radio" name="chart-period" checked="@(_period == ChartPeriod.Week)" @onchange="() => SetPeriod(ChartPeriod.Week)" /><span>Неделя</span></label>
+                        <label class="seg-opt"><input type="radio" name="chart-period" checked="@(_period == ChartPeriod.Month)" @onchange="() => SetPeriod(ChartPeriod.Month)" /><span>Месяц</span></label>
+                        <label class="seg-opt"><input type="radio" name="chart-period" checked="@(_period == ChartPeriod.Year)" @onchange="() => SetPeriod(ChartPeriod.Year)" /><span>Год</span></label>
+                    </div>
+                </div>
+                @{ var series = ExpenseSeries(); var seriesMax = series.Count > 0 ? Math.Max(series.Max(s => s.Amount), 0.01m) : 1m; }
+                <div style="display:flex;align-items:flex-end;gap:7px;height:116px">
+                    @foreach (var point in series)
+                    {
+                        var heightPct = (double)(point.Amount / seriesMax) * 100;
+                        var isPeak = point.Amount == seriesMax;
+                        <div style="flex:1;height:@(Math.Max(heightPct, 2).ToString("0.#", CultureInfo.InvariantCulture))%;background:@(isPeak ? "var(--color-accent)" : "var(--color-accent-800)");border-radius:3px" title="@point.Label: @Format.Money(point.Amount)"></div>
+                    }
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:10.5px;color:color-mix(in srgb, var(--color-text) 40%, transparent);margin-top:8px">
+                    <span>@series.FirstOrDefault().Label</span>
+                    <span>@series.ElementAtOrDefault(series.Count / 2).Label</span>
+                    <span>@series.LastOrDefault().Label</span>
+                </div>
+            </div>
+
+            <div style="display:flex;align-items:baseline;gap:10px">
+                <span style="font-size:13px">Последние операции</span>
+                <a href="transactions" style="margin-left:auto;font-size:12px;text-decoration:none">Все операции →</a>
+            </div>
+            <div>
+                @foreach (var t in RecentTransactions)
+                {
+                    <div class="txn-row">
+                        <span class="icon-tile"><i class="ph ph-@Format.CategoryIcon(CategoryOf(t)?.Icon)"></i></span>
+                        <span><span class="txn-title">@TransactionTitle(t)</span><br><span class="txn-meta">@CategoryName(t.CategoryId) · @AccountName(t.AccountId) · @Format.DayMonth(t.Date)</span></span>
+                        <span class="num @(t.Type == TransactionType.Income ? "amount-in" : "amount-out")" style="font-size:14px">@Format.SignedAmount(t.Amount, t.Type)</span>
+                    </div>
+                }
+            </div>
+        }
+        else if (_layout == "hero")
+        {
+            var donut = DonutData();
+            <div style="display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:40px;align-items:start">
+                <div>
+                    <div class="kpi-label" style="margin-bottom:8px">Общий баланс</div>
+                    <div class="num" style="font-size:56px;line-height:1">@Format.Money(TotalBalance)</div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px" class="text-muted">
+                        <i class="ph ph-trend-up" style="color:var(--color-accent)"></i>@(MonthNet >= 0 ? "+" : "")@Format.Money(MonthNet) за месяц
+                    </div>
+                    <svg viewBox="0 0 420 70" style="width:100%;height:70px;margin-top:18px;overflow:visible">
+                        <polyline points="@SparklinePoints()" fill="none" stroke="var(--color-accent)" stroke-width="1.5"></polyline>
+                    </svg>
+                    <hr class="hr" />
+                    <div style="display:grid;grid-template-columns:repeat(@Math.Min(_accounts.Count, 3),minmax(0,1fr));gap:12px">
+                        @foreach (var account in _accounts.Take(3))
+                        {
+                            <div class="kpi" style="padding:11px 13px"><span class="kpi-label">@account.Name</span><span class="num" style="font-size:18px">@Format.Money(AccountBalance(account))</span></div>
+                        }
+                    </div>
+                </div>
+
+                <div>
+                    <div style="font-size:13px;margin-bottom:14px">Структура расходов</div>
+                    @if (donut.Total == 0)
+                    {
+                        <p class="text-muted" style="font-size:13px">Нет расходов в этом месяце.</p>
+                    }
+                    else
+                    {
+                        <div style="display:flex;align-items:center;gap:22px">
+                            <div style="width:132px;height:132px;flex:none;border-radius:50%;background:@donut.Gradient;display:grid;place-items:center">
+                                <div style="width:88px;height:88px;border-radius:50%;background:var(--color-bg);display:grid;place-items:center;text-align:center">
+                                    <span><span class="num" style="font-size:17px">@Format.Money(donut.Total)</span><br><span style="font-size:10px" class="text-muted">за месяц</span></span>
+                                </div>
+                            </div>
+                            <div style="display:flex;flex-direction:column;gap:9px;font-size:12.5px;min-width:0">
+                                @foreach (var slice in donut.Slices)
+                                {
+                                    <span style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:2px;background:@slice.Color"></span>@slice.Name <span class="num text-muted" style="margin-left:auto">@Format.Money(slice.Amount)</span></span>
+                                }
+                            </div>
+                        </div>
+                    }
+                    <hr class="hr" />
+                    <div style="font-size:13px;margin-bottom:6px">Последние операции</div>
+                    @foreach (var t in RecentTransactions.Take(4))
+                    {
+                        <div class="txn-row" style="grid-template-columns:1fr auto;padding:7px 0">
+                            <span style="font-size:13px">@TransactionTitle(t) <span class="text-muted">· @CategoryName(t.CategoryId)</span></span>
+                            <span class="num @(t.Type == TransactionType.Income ? "amount-in" : "amount-out")" style="font-size:13px">@Format.SignedAmount(t.Amount, t.Type)</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            var topCategories = ExpenseByCategoryThisMonth().Take(4).ToList();
+            var topMax = topCategories.Count > 0 ? topCategories.Max(c => c.Amount) : 1m;
+            <div class="page-top" style="margin-top:-8px">
+                <span class="num text-muted" style="font-size:15px">@Format.Money(TotalBalance)</span>
+            </div>
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:26px;align-items:start">
+                <div>
+                    <table class="table">
+                        <thead><tr><th>Дата</th><th>Описание</th><th>Категория</th><th>Счёт</th><th style="text-align:right">Сумма</th></tr></thead>
+                        <tbody>
+                            @foreach (var t in RecentTransactions.Take(8))
+                            {
+                                <tr>
+                                    <td class="num">@t.Date.ToString("dd.MM")</td>
+                                    <td>@TransactionTitle(t)</td>
+                                    <td>@CategoryName(t.CategoryId)</td>
+                                    <td>@AccountName(t.AccountId)</td>
+                                    <td class="num @(t.Type == TransactionType.Income ? "amount-in" : "amount-out")" style="text-align:right">@Format.SignedAmount(t.Amount, t.Type)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    <a href="transactions" class="btn btn-secondary btn-block" style="margin-top:14px">Все операции</a>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:16px">
+                    <div class="kpi">
+                        <span class="kpi-label">@Format.MonthName(DateTime.Today.Month)</span>
+                        <span style="display:flex;justify-content:space-between;font-size:13px">Доходы <span class="num amount-in">+@Format.Money(MonthIncome)</span></span>
+                        <span style="display:flex;justify-content:space-between;font-size:13px">Расходы <span class="num">@Format.Money(-MonthExpense)</span></span>
+                        <span style="height:1px;background:var(--color-divider);margin:4px 0"></span>
+                        <span style="display:flex;justify-content:space-between;font-size:13px">Итого <span class="num" style="color:var(--color-accent-300)">@(MonthNet >= 0 ? "+" : "")@Format.Money(MonthNet)</span></span>
+                    </div>
+                    <div>
+                        <div class="kpi-label" style="margin-bottom:10px">Счета</div>
+                        @foreach (var account in _accounts)
+                        {
+                            <div class="txn-row" style="grid-template-columns:1fr auto;padding:8px 0"><span style="font-size:13px">@account.Name</span><span class="num" style="font-size:13px">@Format.Money(AccountBalance(account))</span></div>
+                        }
+                    </div>
+                    @if (topCategories.Count > 0)
+                    {
+                        <div>
+                            <div class="kpi-label" style="margin-bottom:10px">Топ категорий</div>
+                            <div style="display:flex;flex-direction:column;gap:10px">
+                                @foreach (var category in topCategories)
+                                {
+                                    var widthPct = (double)(category.Amount / topMax) * 100;
+                                    <span>
+                                        <span style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px">@category.Name <span class="num text-muted">@Format.Money(category.Amount)</span></span>
+                                        <span style="display:block;height:4px;border-radius:2px;background:var(--color-accent);width:@(widthPct.ToString("0.#", CultureInfo.InvariantCulture))%"></span>
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="dashboard-mobile">
+        <div class="kpi-label" style="margin-bottom:6px">Общий баланс</div>
+        <div class="num" style="font-size:38px;line-height:1">@Format.Money(TotalBalance)</div>
+        <div style="display:flex;align-items:center;gap:7px;margin-top:8px;font-size:12px" class="text-muted">
+            <i class="ph ph-trend-up" style="color:var(--color-accent)"></i>@(MonthNet >= 0 ? "+" : "")@Format.Money(MonthNet) за месяц
+        </div>
+        <div style="display:flex;gap:10px;margin-top:18px">
+            <div class="kpi" style="flex:1;padding:10px 12px"><span class="kpi-label">Доходы</span><span class="num amount-in" style="font-size:16px">+@Format.Money(MonthIncome)</span></div>
+            <div class="kpi" style="flex:1;padding:10px 12px"><span class="kpi-label">Расходы</span><span class="num" style="font-size:16px">@Format.Money(-MonthExpense)</span></div>
+        </div>
+        <div class="chip-row" style="margin-top:10px">
+            @foreach (var account in _accounts)
+            {
+                <span class="chip"><i class="ph ph-wallet"></i>@account.Name · @Format.Money(AccountBalance(account))</span>
+            }
+        </div>
+        @foreach (var group in RecentTransactions.Take(8).GroupBy(t => t.Date).OrderByDescending(g => g.Key))
+        {
+            <div class="txn-day-heading" style="margin-top:18px"><span>@Format.DayMonth(group.Key)</span></div>
+            @foreach (var t in group)
+            {
+                <div class="txn-row">
+                    <span class="icon-tile"><i class="ph ph-@Format.CategoryIcon(CategoryOf(t)?.Icon)"></i></span>
+                    <span><span class="txn-title">@TransactionTitle(t)</span><br><span class="txn-meta">@CategoryName(t.CategoryId) · @AccountName(t.AccountId)</span></span>
+                    <span class="num @(t.Type == TransactionType.Income ? "amount-in" : "amount-out")" style="font-size:14px">@Format.SignedAmount(t.Amount, t.Type)</span>
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    private enum ChartPeriod { Week, Month, Year }
+
+    private List<Account> _accounts = new();
+    private List<Category> _categories = new();
+    private List<Transaction> _transactions = new();
+    private string _layout = "cards";
+    private ChartPeriod _period = ChartPeriod.Month;
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        DialogService.Saved += OnSaved;
+        _layout = await Preferences.GetDashboardLayoutAsync();
+        await LoadAsync();
+    }
+
+    private void OnSaved() => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    private async Task LoadAsync()
+    {
+        _accounts = await AccountService.GetAllAsync();
+        _categories = await CategoryService.GetAllAsync();
+        _transactions = await TransactionService.GetAllAsync();
+        _loaded = true;
+    }
+
+    private async Task SetLayoutAsync(string layout)
+    {
+        _layout = layout;
+        await Preferences.SetDashboardLayoutAsync(layout);
+    }
+
+    private void SetPeriod(ChartPeriod period) => _period = period;
+
+    private decimal AccountBalance(Account account) =>
+        account.InitialBalance + _transactions
+            .Where(t => t.AccountId == account.Id)
+            .Sum(t => t.Type == TransactionType.Income ? t.Amount : -t.Amount);
+
+    private decimal TotalBalance => _accounts.Sum(AccountBalance);
+
+    private IEnumerable<Transaction> MonthTransactions =>
+        _transactions.Where(t => t.Date.Year == DateTime.Today.Year && t.Date.Month == DateTime.Today.Month);
+
+    private decimal MonthIncome => MonthTransactions.Where(t => t.Type == TransactionType.Income).Sum(t => t.Amount);
+    private decimal MonthExpense => MonthTransactions.Where(t => t.Type == TransactionType.Expense).Sum(t => t.Amount);
+    private decimal MonthNet => MonthIncome - MonthExpense;
+    private int MonthIncomeCount => MonthTransactions.Count(t => t.Type == TransactionType.Income);
+    private int ExpenseShareOfIncome => MonthIncome == 0 ? 0 : (int)Math.Round(MonthExpense / MonthIncome * 100);
+
+    private List<Transaction> RecentTransactions =>
+        _transactions.OrderByDescending(t => t.Date).ThenByDescending(t => t.CreatedAt).Take(8).ToList();
+
+    private string AccountName(Guid id) => _accounts.FirstOrDefault(a => a.Id == id)?.Name ?? "?";
+    private string CategoryName(Guid id) => _categories.FirstOrDefault(c => c.Id == id)?.Name ?? "?";
+    private Category? CategoryOf(Transaction t) => _categories.FirstOrDefault(c => c.Id == t.CategoryId);
+    private string TransactionTitle(Transaction t) => string.IsNullOrWhiteSpace(t.Note) ? CategoryName(t.CategoryId) : t.Note;
+
+    private List<(string Label, decimal Amount)> ExpenseSeries()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+
+        if (_period == ChartPeriod.Week)
+        {
+            return Enumerable.Range(0, 7)
+                .Select(i => today.AddDays(i - 6))
+                .Select(d => (d.Day.ToString(CultureInfo.InvariantCulture), ExpenseOn(d)))
+                .ToList();
+        }
+
+        if (_period == ChartPeriod.Year)
+        {
+            return Enumerable.Range(0, 12)
+                .Select(i => today.AddMonths(i - 11))
+                .Select(d => (Format.ShortMonth(d.Month), ExpenseInMonth(d.Year, d.Month)))
+                .ToList();
+        }
+
+        return Enumerable.Range(0, 14)
+            .Select(i => today.AddDays(i - 13))
+            .Select(d => (d.Day.ToString(CultureInfo.InvariantCulture), ExpenseOn(d)))
+            .ToList();
+    }
+
+    private decimal ExpenseOn(DateOnly date) =>
+        _transactions.Where(t => t.Date == date && t.Type == TransactionType.Expense).Sum(t => t.Amount);
+
+    private decimal ExpenseInMonth(int year, int month) =>
+        _transactions.Where(t => t.Date.Year == year && t.Date.Month == month && t.Type == TransactionType.Expense).Sum(t => t.Amount);
+
+    private List<(string Name, decimal Amount)> ExpenseByCategoryThisMonth()
+    {
+        var groups = MonthTransactions
+            .Where(t => t.Type == TransactionType.Expense)
+            .GroupBy(t => t.CategoryId)
+            .Select(g => (Name: CategoryName(g.Key), Amount: g.Sum(t => t.Amount)))
+            .OrderByDescending(x => x.Amount)
+            .ToList();
+
+        if (groups.Count <= 5)
+        {
+            return groups;
+        }
+
+        var top = groups.Take(4).ToList();
+        var rest = groups.Skip(4).Sum(x => x.Amount);
+        top.Add(("Прочее", rest));
+        return top;
+    }
+
+    private (string Gradient, decimal Total, List<(string Name, decimal Amount, string Color)> Slices) DonutData()
+    {
+        var colors = new[] { "var(--color-accent)", "var(--color-accent-600)", "var(--color-accent-700)", "var(--color-accent-800)", "var(--color-neutral-800)" };
+        var groups = ExpenseByCategoryThisMonth();
+        var total = groups.Sum(g => g.Amount);
+        var slices = new List<(string, decimal, string)>();
+        var stops = new List<string>();
+        decimal cursor = 0;
+
+        for (var i = 0; i < groups.Count; i++)
+        {
+            var pct = total == 0 ? 0 : groups[i].Amount / total * 100;
+            var color = colors[i % colors.Length];
+            var start = cursor;
+            var end = cursor + pct;
+            stops.Add($"{color} {start.ToString("0.##", CultureInfo.InvariantCulture)}% {end.ToString("0.##", CultureInfo.InvariantCulture)}%");
+            slices.Add((groups[i].Name, groups[i].Amount, color));
+            cursor = end;
+        }
+
+        var gradient = stops.Count == 0 ? "var(--color-neutral-800)" : $"conic-gradient({string.Join(",", stops)})";
+        return (gradient, total, slices);
+    }
+
+    private string SparklinePoints()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var start = today.AddDays(-12);
+        var days = Enumerable.Range(0, 13).Select(i => start.AddDays(i)).ToList();
+
+        var values = new List<double>();
+        double running = 0;
+        foreach (var d in days)
+        {
+            var net = (double)_transactions.Where(t => t.Date == d)
+                .Sum(t => t.Type == TransactionType.Income ? t.Amount : -t.Amount);
+            running += net;
+            values.Add(running);
+        }
+
+        var min = values.Min();
+        var max = values.Max();
+        var range = max - min;
+        if (range == 0)
+        {
+            range = 1;
+        }
+
+        var points = new List<string>();
+        for (var i = 0; i < values.Count; i++)
+        {
+            var x = i * (420.0 / (values.Count - 1));
+            var y = 66 - (values[i] - min) / range * 60;
+            points.Add($"{x.ToString("0.#", CultureInfo.InvariantCulture)},{y.ToString("0.#", CultureInfo.InvariantCulture)}");
+        }
+
+        return string.Join(" ", points);
+    }
+
+    public void Dispose()
+    {
+        DialogService.Saved -= OnSaved;
+    }
+}

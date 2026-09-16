@@ -2,19 +2,20 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
 
-<PageTitle>Personal Finance</PageTitle>
+<PageTitle>Финансы</PageTitle>
 
 @if (_checked && !_isAuthenticated)
 {
     <div class="hero">
-        <h1 class="display-5 fw-bold mb-3">Take control of your money</h1>
-        <p class="lead text-muted mb-4">
-            An offline-first tracker for your accounts, categories and transactions.
-            Everything works without a connection and syncs automatically once you're back online.
+        <div class="auth-brand" style="margin-bottom:var(--space-4)"><span class="brand-mark">PF</span>Финансы</div>
+        <h1>Держите деньги под контролем</h1>
+        <p class="text-muted">
+            Офлайн-трекер счетов, категорий и операций. Всё работает без подключения
+            и синхронизируется автоматически, когда появится сеть.
         </p>
-        <div class="d-flex justify-content-center gap-2">
-            <a class="btn btn-primary btn-lg" href="register">Get started</a>
-            <a class="btn btn-outline-secondary btn-lg" href="login">Log in</a>
+        <div style="display:flex;gap:10px;margin-top:var(--space-3)">
+            <a class="btn btn-primary" href="register">Начать</a>
+            <a class="btn btn-secondary" href="login">Войти</a>
         </div>
     </div>
 }
@@ -31,7 +32,7 @@
 
         if (_isAuthenticated)
         {
-            Navigation.NavigateTo("/transactions");
+            Navigation.NavigateTo("/dashboard");
         }
     }
 }

@@ -1,46 +1,98 @@
 @inherits LayoutComponentBase
-@using PersonalFinance.Client.Auth
-@inject AuthService AuthService
+@implements IDisposable
+@using PersonalFinance.Client.Services
+@using PersonalFinance.Client.Formatting
+@using PersonalFinance.Domain.Entities
 @inject NavigationManager Navigation
+@inject TransactionDialogService DialogService
+@inject LocalAccountService AccountService
+@inject LocalCategoryService CategoryService
+@inject PreferencesService Preferences
 
-<nav class="navbar navbar-expand-md navbar-dark bg-primary sticky-top shadow-sm">
-    <div class="container">
-        <a class="navbar-brand" href="">💰 Personal Finance</a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu" aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navMenu">
-            <AuthorizeView>
-                <Authorized>
-                    <ul class="navbar-nav me-auto mb-2 mb-md-0">
-                        <li class="nav-item"><NavLink class="nav-link" href="transactions" Match="NavLinkMatch.All">Transactions</NavLink></li>
-                        <li class="nav-item"><NavLink class="nav-link" href="accounts">Accounts</NavLink></li>
-                        <li class="nav-item"><NavLink class="nav-link" href="categories">Categories</NavLink></li>
-                    </ul>
-                    <div class="d-flex align-items-center gap-3">
-                        <span class="text-white-50 small d-none d-md-inline">@context.User.Identity?.Name</span>
-                        <button type="button" class="btn btn-outline-light btn-sm" @onclick="LogoutAsync">Log out</button>
-                    </div>
-                </Authorized>
-                <NotAuthorized>
-                    <ul class="navbar-nav ms-auto align-items-md-center gap-md-2">
-                        <li class="nav-item"><NavLink class="nav-link" href="login">Log in</NavLink></li>
-                        <li class="nav-item"><NavLink class="btn btn-light btn-sm" href="register">Register</NavLink></li>
-                    </ul>
-                </NotAuthorized>
-            </AuthorizeView>
+<AuthorizeView>
+    <Authorized>
+        <div class="app-shell">
+            <nav class="app-sidebar">
+                <div class="auth-brand" style="margin-bottom:6px;padding:4px 8px 0"><span class="brand-mark">PF</span>Финансы</div>
+                <NavLink class="sidebar-item" href="dashboard"><i class="ph ph-squares-four"></i>Обзор</NavLink>
+                <NavLink class="sidebar-item" href="transactions"><i class="ph ph-list-dashes"></i>Операции</NavLink>
+                <NavLink class="sidebar-item" href="accounts"><i class="ph ph-wallet"></i>Счета</NavLink>
+                <NavLink class="sidebar-item" href="categories"><i class="ph ph-tag"></i>Категории</NavLink>
+                <NavLink class="sidebar-item" href="reports"><i class="ph ph-chart-donut"></i>Отчёты</NavLink>
+                <NavLink class="sidebar-item" href="settings"><i class="ph ph-gear-six"></i>Настройки</NavLink>
+                <button type="button" class="sidebar-footer" @onclick="GoToSettings">
+                    <span class="avatar">@Format.Initials(context.User.Identity?.Name ?? "?")</span>
+                    <span>@context.User.Identity?.Name</span>
+                </button>
+            </nav>
+
+            <div class="mobile-topbar">
+                <span class="brand-mark">PF</span>
+                <SyncStatusChip />
+                <button type="button" class="avatar" style="margin-left:auto;border:none;cursor:pointer" @onclick="GoToSettings">@Format.Initials(context.User.Identity?.Name ?? "?")</button>
+            </div>
+
+            <main class="app-main">
+                @Body
+            </main>
+
+            <button type="button" class="fab" @onclick="DialogService.OpenNew" aria-label="Новая операция"><i class="ph ph-plus"></i></button>
+
+            <nav class="bottom-nav">
+                <NavLink class="bottom-nav-item" href="dashboard"><i class="ph ph-squares-four"></i>Обзор</NavLink>
+                <NavLink class="bottom-nav-item" href="transactions"><i class="ph ph-list-dashes"></i>Операции</NavLink>
+                <NavLink class="bottom-nav-item" href="accounts"><i class="ph ph-wallet"></i>Счета</NavLink>
+                <NavLink class="bottom-nav-item" href="reports"><i class="ph ph-chart-donut"></i>Отчёты</NavLink>
+                <NavLink class="bottom-nav-item" href="settings"><i class="ph ph-gear-six"></i>Ещё</NavLink>
+            </nav>
         </div>
-    </div>
-</nav>
 
-<div class="page-container">
-    @Body
-</div>
+        <TransactionEditor IsOpen="DialogService.IsOpen"
+                            EditingTransaction="DialogService.Editing"
+                            StartAsTransfer="DialogService.OpenAsTransfer"
+                            Accounts="_accounts"
+                            Categories="_categories"
+                            DefaultAccountId="_defaultAccountId"
+                            OnClose="DialogService.Close"
+                            OnSaved="DialogService.NotifySaved" />
+    </Authorized>
+    <NotAuthorized>
+        @Body
+    </NotAuthorized>
+</AuthorizeView>
 
 @code {
-    private async Task LogoutAsync()
+    private List<Account> _accounts = new();
+    private List<Category> _categories = new();
+    private Guid? _defaultAccountId;
+
+    protected override async Task OnInitializedAsync()
     {
-        await AuthService.LogoutAsync();
-        Navigation.NavigateTo("/");
+        DialogService.Changed += OnDialogChanged;
+        await ReloadReferenceDataAsync();
+    }
+
+    private void OnDialogChanged() => InvokeAsync(async () =>
+    {
+        if (DialogService.IsOpen)
+        {
+            await ReloadReferenceDataAsync();
+            _defaultAccountId = await Preferences.GetDefaultAccountIdAsync();
+        }
+
+        StateHasChanged();
+    });
+
+    private async Task ReloadReferenceDataAsync()
+    {
+        _accounts = await AccountService.GetAllAsync();
+        _categories = await CategoryService.GetAllAsync();
+    }
+
+    private void GoToSettings() => Navigation.NavigateTo("settings");
+
+    public void Dispose()
+    {
+        DialogService.Changed -= OnDialogChanged;
     }
 }

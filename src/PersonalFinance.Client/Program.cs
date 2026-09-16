@@ -19,6 +19,9 @@ builder.Services.AddScoped<IndexedDbService>();
 builder.Services.AddScoped<LocalAccountService>();
 builder.Services.AddScoped<LocalCategoryService>();
 builder.Services.AddScoped<LocalTransactionService>();
+builder.Services.AddScoped<TransactionDialogService>();
+builder.Services.AddScoped<PreferencesService>();
+builder.Services.AddScoped<FileDownloadService>();
 
 builder.Services.AddAuthorizationCore();
 builder.Services.AddScoped<JwtAuthenticationStateProvider>();

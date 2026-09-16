@@ -37,6 +37,12 @@ public class IndexedDbService : IAsyncDisposable
         await module.InvokeVoidAsync("remove", storeName, id);
     }
 
+    public async Task ClearAsync(string storeName)
+    {
+        var module = await _moduleTask.Value;
+        await module.InvokeVoidAsync("clear", storeName);
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_moduleTask.IsValueCreated)

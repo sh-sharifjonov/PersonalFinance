@@ -1,0 +1,189 @@
+@page "/reports"
+@attribute [Authorize]
+@using System.Globalization
+@using System.Text
+@using PersonalFinance.Client.Services
+@using PersonalFinance.Client.Formatting
+@using PersonalFinance.Domain.Entities
+@using PersonalFinance.Domain.Enums
+@inject LocalTransactionService TransactionService
+@inject LocalAccountService AccountService
+@inject LocalCategoryService CategoryService
+@inject FileDownloadService FileDownload
+
+<PageTitle>Отчёты</PageTitle>
+
+<div class="page-top">
+    <h4>Отчёты</h4>
+    <div class="seg" style="margin-left:14px">
+        <label class="seg-opt"><input type="radio" name="report-period" checked="@(_months == 3)" @onchange="() => SetMonths(3)" /><span>3 мес</span></label>
+        <label class="seg-opt"><input type="radio" name="report-period" checked="@(_months == 6)" @onchange="() => SetMonths(6)" /><span>6 мес</span></label>
+        <label class="seg-opt"><input type="radio" name="report-period" checked="@(_months == 12)" @onchange="() => SetMonths(12)" /><span>Год</span></label>
+    </div>
+    <button type="button" class="btn btn-secondary" style="margin-left:auto" @onclick="ExportCsvAsync" disabled="@(_transactions.Count == 0)"><i class="ph ph-download-simple"></i>Экспорт CSV</button>
+</div>
+
+@if (!_loaded)
+{
+    <p class="text-muted">Загрузка…</p>
+}
+else if (_transactions.Count == 0)
+{
+    <div class="empty-state">
+        <span class="icon-tile" style="width:48px;height:48px;font-size:22px"><i class="ph ph-chart-donut"></i></span>
+        <div style="font-size:16px">Пока нет данных для отчёта</div>
+        <p class="text-muted">Добавьте несколько операций — здесь появятся графики и итоги.</p>
+    </div>
+}
+else
+{
+    var months = PeriodMonths;
+    var periodTx = PeriodTransactions(months).ToList();
+    var periodIncome = periodTx.Where(t => t.Type == TransactionType.Income).Sum(t => t.Amount);
+    var periodExpense = periodTx.Where(t => t.Type == TransactionType.Expense).Sum(t => t.Amount);
+    var avgIncome = periodIncome / months.Count;
+    var avgExpense = periodExpense / months.Count;
+    var savingsRate = periodIncome == 0 ? 0 : (periodIncome - periodExpense) / periodIncome * 100;
+    var categoryTotals = CategoryTotals(periodTx);
+    var topCategory = categoryTotals.FirstOrDefault();
+
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px">
+        <div class="kpi"><span class="kpi-label">Средний доход</span><span class="num amount-in" style="font-size:22px">+@Format.Money(avgIncome)</span></div>
+        <div class="kpi"><span class="kpi-label">Средний расход</span><span class="num" style="font-size:22px">@Format.Money(-avgExpense)</span></div>
+        <div class="kpi"><span class="kpi-label">Норма сбережений</span><span class="num" style="font-size:22px">@savingsRate.ToString("0.0", CultureInfo.InvariantCulture)%</span></div>
+        <div class="kpi">
+            <span class="kpi-label">Крупнейшая статья</span>
+            @if (topCategory.Name is null)
+            {
+                <span style="font-size:18px">—</span>
+            }
+            else
+            {
+                <span style="font-size:18px">@topCategory.Name</span>
+                <span class="num text-muted" style="font-size:11.5px">@Format.Money(topCategory.Amount) за @months.Count @Format.Plural(months.Count, "месяц", "месяца", "месяцев")</span>
+            }
+        </div>
+    </div>
+
+    <div style="background:var(--color-surface);border-radius:var(--radius-md);padding:16px 18px">
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px">
+            <span style="font-size:13px">Доходы и расходы по месяцам</span>
+            <span style="display:flex;align-items:center;gap:7px;font-size:11.5px;margin-left:auto" class="text-muted"><span style="width:8px;height:8px;border-radius:2px;background:var(--color-accent)"></span>Доходы</span>
+            <span style="display:flex;align-items:center;gap:7px;font-size:11.5px" class="text-muted"><span style="width:8px;height:8px;border-radius:2px;background:var(--color-neutral-700)"></span>Расходы</span>
+        </div>
+        @{ var maxMonthly = months.Select(m => Math.Max(MonthIncome(m), MonthExpense(m))).DefaultIfEmpty(0.01m).Max(); if (maxMonthly == 0) { maxMonthly = 0.01m; } }
+        <div style="display:flex;align-items:flex-end;gap:@(months.Count > 6 ? "10px" : "26px");height:170px">
+            @foreach (var month in months)
+            {
+                var incomeH = (double)(MonthIncome(month) / maxMonthly) * 100;
+                var expenseH = (double)(MonthExpense(month) / maxMonthly) * 100;
+                <div style="flex:1;display:flex;align-items:flex-end;gap:5px;height:100%">
+                    <span style="flex:1;height:@(incomeH.ToString("0.#", CultureInfo.InvariantCulture))%;background:var(--color-accent);border-radius:3px" title="Доходы: @Format.Money(MonthIncome(month))"></span>
+                    <span style="flex:1;height:@(expenseH.ToString("0.#", CultureInfo.InvariantCulture))%;background:var(--color-neutral-700);border-radius:3px" title="Расходы: @Format.Money(MonthExpense(month))"></span>
+                </div>
+            }
+        </div>
+        <div style="display:flex;gap:@(months.Count > 6 ? "10px" : "26px");margin-top:9px;font-size:11px" class="text-muted">
+            @foreach (var month in months)
+            {
+                <span style="flex:1;text-align:center">@Format.ShortMonth(month.Month)</span>
+            }
+        </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:26px;align-items:start">
+        <div>
+            <div class="kpi-label" style="margin-bottom:8px">По категориям · @months.Count @Format.Plural(months.Count, "месяц", "месяца", "месяцев")</div>
+            <table class="table">
+                <thead><tr><th>Категория</th><th style="text-align:right">Сумма</th><th style="text-align:right">Доля</th><th style="text-align:right">Операций</th></tr></thead>
+                <tbody>
+                    @foreach (var row in categoryTotals)
+                    {
+                        <tr>
+                            <td>@row.Name</td>
+                            <td class="num" style="text-align:right">@Format.Money(row.Amount)</td>
+                            <td class="num" style="text-align:right">@(periodExpense == 0 ? 0 : row.Amount / periodExpense * 100).ToString("0.0", CultureInfo.InvariantCulture)%</td>
+                            <td class="num" style="text-align:right">@row.Count</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">Итог за период</span>
+            <span style="display:flex;justify-content:space-between;font-size:13px">Доходы <span class="num amount-in">+@Format.Money(periodIncome)</span></span>
+            <span style="display:flex;justify-content:space-between;font-size:13px">Расходы <span class="num">@Format.Money(-periodExpense)</span></span>
+            <span style="height:1px;background:var(--color-divider);margin:4px 0"></span>
+            <span style="display:flex;justify-content:space-between;font-size:14px">Накоплено <span class="num" style="color:var(--color-accent-300)">@((periodIncome - periodExpense) >= 0 ? "+" : "")@Format.Money(periodIncome - periodExpense)</span></span>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Transaction> _transactions = new();
+    private List<Account> _accounts = new();
+    private List<Category> _categories = new();
+    private bool _loaded;
+    private int _months = 6;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _accounts = await AccountService.GetAllAsync();
+        _categories = await CategoryService.GetAllAsync();
+        _transactions = await TransactionService.GetAllAsync();
+        _loaded = true;
+    }
+
+    private void SetMonths(int months) => _months = months;
+
+    private List<(int Year, int Month)> PeriodMonths
+    {
+        get
+        {
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            return Enumerable.Range(0, _months)
+                .Select(i => today.AddMonths(i - (_months - 1)))
+                .Select(d => (d.Year, d.Month))
+                .ToList();
+        }
+    }
+
+    private IEnumerable<Transaction> PeriodTransactions(List<(int Year, int Month)> months) =>
+        _transactions.Where(t => months.Contains((t.Date.Year, t.Date.Month)));
+
+    private decimal MonthIncome((int Year, int Month) month) => _transactions
+        .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month && t.Type == TransactionType.Income)
+        .Sum(t => t.Amount);
+
+    private decimal MonthExpense((int Year, int Month) month) => _transactions
+        .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month && t.Type == TransactionType.Expense)
+        .Sum(t => t.Amount);
+
+    private List<(string Name, decimal Amount, int Count)> CategoryTotals(List<Transaction> periodTx) => periodTx
+        .Where(t => t.Type == TransactionType.Expense)
+        .GroupBy(t => t.CategoryId)
+        .Select(g => (Name: CategoryName(g.Key), Amount: g.Sum(t => t.Amount), Count: g.Count()))
+        .OrderByDescending(x => x.Amount)
+        .ToList();
+
+    private string CategoryName(Guid id) => _categories.FirstOrDefault(c => c.Id == id)?.Name ?? "?";
+    private string AccountName(Guid id) => _accounts.FirstOrDefault(a => a.Id == id)?.Name ?? "?";
+
+    private async Task ExportCsvAsync()
+    {
+        var months = PeriodMonths;
+        var rows = PeriodTransactions(months).OrderBy(t => t.Date).ToList();
+
+        var sb = new StringBuilder();
+        sb.AppendLine("Дата,Тип,Категория,Счёт,Сумма,Заметка");
+        foreach (var t in rows)
+        {
+            var type = t.Type == TransactionType.Income ? "Доход" : "Расход";
+            var note = (t.Note ?? string.Empty).Replace("\"", "\"\"");
+            sb.AppendLine($"{t.Date:yyyy-MM-dd},{type},\"{CategoryName(t.CategoryId)}\",\"{AccountName(t.AccountId)}\",{t.Amount.ToString(CultureInfo.InvariantCulture)},\"{note}\"");
+        }
+
+        var fileName = $"personal-finance-{DateTime.Today:yyyy-MM}.csv";
+        await FileDownload.DownloadTextAsync(fileName, sb.ToString(), "text/csv");
+    }
+}
