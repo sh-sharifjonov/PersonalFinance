@@ -1,37 +1,28 @@
 @page "/"
-@inject AuthenticationStateProvider AuthStateProvider
-@inject NavigationManager Navigation
 
-<PageTitle>Personal Finance</PageTitle>
-
-@if (_checked && !_isAuthenticated)
-{
-    <div class="hero">
-        <h1 class="display-5 fw-bold mb-3">Take control of your money</h1>
-        <p class="lead text-muted mb-4">
-            An offline-first tracker for your accounts, categories and transactions.
-            Everything works without a connection and syncs automatically once you're back online.
-        </p>
-        <div class="d-flex justify-content-center gap-2">
-            <a class="btn btn-primary btn-lg" href="register">Get started</a>
-            <a class="btn btn-outline-secondary btn-lg" href="login">Log in</a>
+<AuthorizeView>
+    <Authorized>
+        <Overview />
+    </Authorized>
+    <NotAuthorized>
+        <PageTitle>Финансы</PageTitle>
+        <div class="card pf-auth-card wide">
+            <div class="pf-auth-brand">
+                <span class="brand-logo"><svg viewBox="0 0 36 36"><use href="#i-logo"></use></svg></span>
+                <span class="brand-name">Финансы</span>
+            </div>
+            <div>
+                <span class="eyebrow" style="display:block;margin-bottom:10px">Personal finance</span>
+                <h1 class="pf-h" tabindex="-1">Деньги под контролем</h1>
+                <div class="field-help" style="font-size:14px;margin-top:8px">
+                    Учёт счетов, категорий и операций. Всё работает без интернета и синхронизируется,
+                    как только сеть появится.
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <a class="btn btn--primary" href="register">Начать</a>
+                <a class="btn btn--ghost" href="login">Войти</a>
+            </div>
         </div>
-    </div>
-}
-
-@code {
-    private bool _checked;
-    private bool _isAuthenticated;
-
-    protected override async Task OnInitializedAsync()
-    {
-        var state = await AuthStateProvider.GetAuthenticationStateAsync();
-        _isAuthenticated = state.User.Identity?.IsAuthenticated ?? false;
-        _checked = true;
-
-        if (_isAuthenticated)
-        {
-            Navigation.NavigateTo("/transactions");
-        }
-    }
-}
+    </NotAuthorized>
+</AuthorizeView>

@@ -1,0 +1,304 @@
+@page "/reports"
+@attribute [Authorize]
+@using System.Globalization
+@using System.Text
+@implements IDisposable
+@inject FinanceDataService DataService
+@inject AppState AppState
+@inject IJSRuntime JS
+
+<PageTitle>Отчёты · Финансы</PageTitle>
+
+<PageTop Title="Отчёты">
+    <div class="tabs pills bare pf-hide-mobile" role="tablist">
+        @foreach (var months in PeriodOptions)
+        {
+            <span class="tab @(_months == months ? "is-active" : null)" role="tab" @onclick="() => SetPeriod(months)">@PeriodLabel(months)</span>
+        }
+    </div>
+    <button type="button" class="btn btn--ghost" disabled="@(_period.Count == 0)" @onclick="ExportCsvAsync">
+        <Icon Name="down" /><span class="pf-hide-mobile">Экспорт CSV</span>
+    </button>
+</PageTop>
+
+<div class="pf-body">
+    <div class="tabs pills full only-mobile" role="tablist">
+        @foreach (var months in PeriodOptions)
+        {
+            <span class="tab @(_months == months ? "is-active" : null)" role="tab" @onclick="() => SetPeriod(months)">@PeriodLabel(months)</span>
+        }
+    </div>
+
+    @if (_data is null)
+    {
+        <div class="pf-empty-inline">Загрузка…</div>
+    }
+    else if (_data.Transactions.Count == 0)
+    {
+        <EmptyState IconName="chart" Title="Отчётам нужны данные" Text="Как только появятся операции, здесь будут средние доходы и расходы, норма сбережений и разбивка по категориям.">
+            <button type="button" class="btn btn--primary" @onclick="() => AppState.OpenTransactionEditor()"><Icon Name="plus" />Новая операция</button>
+        </EmptyState>
+    }
+    else
+    {
+        var cur = _data.Currency;
+
+        <div class="kpi-grid pf-kpi-4">
+            <div class="kpi-card c-success">
+                <div class="kpi-top"><div class="kpi-identity"><span class="kpi-icon success"><Icon Name="up" Class="@null" /></span><span class="kpi-label">Средний доход</span></div></div>
+                <div class="kpi-value num pf-kpi-sm">@Fmt.Money(_income / _months, cur, cents: false)</div>
+                <div class="kpi-compare">в месяц</div>
+            </div>
+            <div class="kpi-card c-danger">
+                <div class="kpi-top"><div class="kpi-identity"><span class="kpi-icon danger"><Icon Name="receipt" Class="@null" /></span><span class="kpi-label">Средний расход</span></div></div>
+                <div class="kpi-value num pf-kpi-sm">@Fmt.Money(_expense / _months, cur, cents: false)</div>
+                <div class="kpi-compare">в месяц</div>
+            </div>
+            <div class="kpi-card c-primary">
+                <div class="kpi-top"><div class="kpi-identity"><span class="kpi-icon primary"><Icon Name="piggy" Class="@null" /></span><span class="kpi-label">Норма сбережений</span></div></div>
+                @if (_savingsRate is { } rate)
+                {
+                    <div class="kpi-value num pf-kpi-sm">@rate.ToString("0.0", CultureInfo.InvariantCulture)<sup>%</sup></div>
+                    <div class="kpi-compare">
+                        @if (_savingsRatePrev is { } prevRate)
+                        {
+                            var diff = rate - prevRate;
+                            <span class="@(diff >= 0 ? "up" : "down")">@(diff >= 0 ? "▲" : "▼")</span><strong>@Fmt.SignedPercent(diff)</strong><span class="sep">·</span><span>к прошлому периоду</span>
+                        }
+                        else
+                        {
+                            <span>доля дохода, которая осталась</span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="kpi-value num pf-kpi-sm">—</div>
+                    <div class="kpi-compare">нет доходов за период</div>
+                }
+            </div>
+            <div class="kpi-card c-purple">
+                <div class="kpi-top"><div class="kpi-identity"><span class="kpi-icon purple"><Icon Name="@Visuals.CategoryIcon(_top?.Category)" Class="@null" /></span><span class="kpi-label">Крупнейшая статья</span></div></div>
+                <div class="kpi-value pf-kpi-sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@(_top?.Category.Name ?? "—")</div>
+                <div class="kpi-compare">
+                    @if (_top is not null)
+                    {
+                        <strong>@Fmt.Money(_top.Total, cur, cents: false)</strong><span class="sep">·</span><span>@Fmt.Percent(_top.Share) расходов</span>
+                    }
+                    else
+                    {
+                        <span>расходов за период нет</span>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-head">
+                <div class="card-title-wrap">
+                    <span class="eyebrow">@Fmt.MonthName(_monthStarts[0].Month) — @Fmt.MonthName(_monthStarts[^1].Month).ToLowerInvariant()</span>
+                    <h3 class="card-title">Доходы и расходы по месяцам</h3>
+                </div>
+                <span class="pf-legend">
+                    <span><span class="pf-swatch" style="background:var(--primary)"></span>Доходы</span>
+                    <span><span class="pf-swatch" style="background:var(--chart-muted)"></span>Расходы</span>
+                </span>
+            </div>
+            <div class="pf-duo @(_months > 6 ? "dense" : null)" role="img" aria-label="Доходы и расходы по месяцам">
+                @for (var i = 0; i < _monthly.Count; i++)
+                {
+                    var month = _monthly[i];
+                    <div class="pf-duo-group">
+                        <span class="inc" style="height:@Height(month.Income);animation-delay:@(i * 40)ms" title="@month.Label: доходы @Fmt.Money(month.Income, cur)"></span>
+                        <span class="exp" style="height:@Height(month.Expense);animation-delay:@(i * 40 + 20)ms" title="@month.Label: расходы @Fmt.Money(month.Expense, cur)"></span>
+                    </div>
+                }
+            </div>
+            <div class="pf-duo-axis @(_months > 6 ? "dense" : null)">
+                @foreach (var start in _monthStarts)
+                {
+                    <span>@Fmt.MonthAxis(start.Month)</span>
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-head">
+                <div class="card-title-wrap"><span class="eyebrow">@PeriodLabel(_months)</span><h3 class="card-title">Расходы по категориям</h3></div>
+            </div>
+            @if (_categories.Count == 0)
+            {
+                <div class="pf-empty-inline">Расходов за период нет.</div>
+            }
+            else
+            {
+                <div class="table-scroll">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Категория</th>
+                                <th style="width:40%">Доля</th>
+                                <th style="text-align:right">Сумма</th>
+                                <th style="text-align:right">Операций</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _categories)
+                            {
+                                <tr>
+                                    <td class="cell-name">@row.Category.Name</td>
+                                    <td>
+                                        <span style="display:flex;align-items:center;gap:10px">
+                                            <span class="progress thin" style="flex:1"><span class="progress-fill" style="display:block;width:@Width(row.Total)"></span></span>
+                                            <span class="mono muted" style="font-size:11.5px">@Fmt.Percent(row.Share)</span>
+                                        </span>
+                                    </td>
+                                    <td class="cell-price mono">@Fmt.Money(row.Total, cur)</td>
+                                    <td class="cell-price mono muted">@row.Count</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly int[] PeriodOptions = { 3, 6, 12 };
+
+    private record MonthTotals(string Label, decimal Income, decimal Expense);
+
+    private record CategoryTotals(Category Category, decimal Total, decimal Share, int Count);
+
+    private FinanceSnapshot? _data;
+    private int _months = 6;
+
+    private List<DateOnly> _monthStarts = new();
+    private List<Transaction> _period = new();
+    private List<MonthTotals> _monthly = new();
+    private List<CategoryTotals> _categories = new();
+    private CategoryTotals? _top;
+    private decimal _income, _expense, _chartMax;
+    private decimal? _savingsRate, _savingsRatePrev;
+
+    protected override async Task OnInitializedAsync()
+    {
+        AppState.DataChanged += OnDataChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _data = await DataService.LoadAsync();
+        Compute();
+    }
+
+    private static string PeriodLabel(int months) => months == 12 ? "Год" : $"{months} мес";
+
+    private void SetPeriod(int months)
+    {
+        _months = months;
+        Compute();
+    }
+
+    private void Compute()
+    {
+        if (_data is null)
+        {
+            return;
+        }
+
+        var today = FinanceSnapshot.Today;
+        var thisMonth = new DateOnly(today.Year, today.Month, 1);
+        _monthStarts = Enumerable.Range(0, _months).Select(i => thisMonth.AddMonths(i - _months + 1)).ToList();
+
+        var from = _monthStarts[0];
+        var to = thisMonth.AddMonths(1).AddDays(-1);
+        _period = _data.Between(from, to).ToList();
+
+        _income = FinanceSnapshot.Income(_period);
+        _expense = FinanceSnapshot.Expense(_period);
+        _savingsRate = SavingsRate(_income, _expense);
+
+        var previous = _data.Between(from.AddMonths(-_months), from.AddDays(-1)).ToList();
+        _savingsRatePrev = SavingsRate(FinanceSnapshot.Income(previous), FinanceSnapshot.Expense(previous));
+
+        _monthly = _monthStarts
+            .Select(start =>
+            {
+                var inMonth = _period.Where(t => t.Date.Year == start.Year && t.Date.Month == start.Month).ToList();
+                return new MonthTotals(Fmt.MonthYear(start.Year, start.Month), FinanceSnapshot.Income(inMonth), FinanceSnapshot.Expense(inMonth));
+            })
+            .ToList();
+        _chartMax = _monthly.Count == 0 ? 0 : _monthly.Max(m => Math.Max(m.Income, m.Expense));
+
+        _categories = _period
+            .Where(t => t.Type == TransactionType.Expense)
+            .GroupBy(t => t.CategoryId)
+            .Select(g => (Category: _data.CategoryOf(g.First()), Total: g.Sum(t => t.Amount), Count: g.Count()))
+            .Where(x => x.Category is not null)
+            .Select(x => new CategoryTotals(x.Category!, x.Total, _expense > 0 ? x.Total / _expense * 100 : 0, x.Count))
+            .OrderByDescending(x => x.Total)
+            .ToList();
+        _top = _categories.FirstOrDefault();
+    }
+
+    private static decimal? SavingsRate(decimal income, decimal expense) =>
+        income > 0 ? (income - expense) / income * 100 : null;
+
+    private string Height(decimal value) => _chartMax <= 0
+        ? "2px"
+        : Math.Max(1, value / _chartMax * 100).ToString("0.#", CultureInfo.InvariantCulture) + "%";
+
+    private string Width(decimal total) => _top is null || _top.Total <= 0
+        ? "0%"
+        : (total / _top.Total * 100).ToString("0.#", CultureInfo.InvariantCulture) + "%";
+
+    private async Task ExportCsvAsync()
+    {
+        if (_data is null)
+        {
+            return;
+        }
+
+        var csv = new StringBuilder();
+        csv.AppendLine("Дата;Тип;Категория;Счёт;Сумма;Валюта;Заметка");
+
+        foreach (var t in _period.OrderBy(t => t.Date))
+        {
+            csv.AppendLine(string.Join(';',
+                t.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                t.Type == TransactionType.Income ? "Доход" : "Расход",
+                Escape(_data.CategoryOf(t)?.Name),
+                Escape(_data.AccountOf(t)?.Name),
+                FinanceSnapshot.SignedAmount(t).ToString("0.00", CultureInfo.InvariantCulture),
+                _data.CurrencyOf(t),
+                Escape(t.Note)));
+        }
+
+        var fileName = $"finance-{_monthStarts[0]:yyyy-MM}-{_monthStarts[^1]:yyyy-MM}.csv";
+        await JS.InvokeVoidAsync("pfApp.downloadText", fileName, csv.ToString(), "text/csv;charset=utf-8", true);
+    }
+
+    private static string Escape(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        return value.IndexOfAny(new[] { ';', '"', '\n', '\r' }) >= 0
+            ? "\"" + value.Replace("\"", "\"\"") + "\""
+            : value;
+    }
+
+    private void OnDataChanged() => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => AppState.DataChanged -= OnDataChanged;
+}

@@ -15,8 +15,14 @@ public class OutboxService
         _db = db;
     }
 
-    public Task EnqueueAsync(string entityStore, Guid entityId) =>
-        _db.PutAsync(StoreName, new OutboxEntry($"{entityStore}:{entityId}", entityStore, entityId));
+    /// <summary>Raised after a local change is queued, so SyncService can push it soon.</summary>
+    public event Action? Enqueued;
+
+    public async Task EnqueueAsync(string entityStore, Guid entityId)
+    {
+        await _db.PutAsync(StoreName, new OutboxEntry($"{entityStore}:{entityId}", entityStore, entityId));
+        Enqueued?.Invoke();
+    }
 
     public Task<List<OutboxEntry>> GetAllAsync() => _db.GetAllAsync<OutboxEntry>(StoreName);
 

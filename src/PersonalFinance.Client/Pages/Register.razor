@@ -4,52 +4,71 @@
 @inject AuthService AuthService
 @inject AuthenticationStateProvider AuthStateProvider
 @inject SyncService SyncService
+@inject LocalAccountService AccountService
+@inject LocalCategoryService CategoryService
 @inject NavigationManager Navigation
 
-<PageTitle>Register</PageTitle>
+<PageTitle>Регистрация · Финансы</PageTitle>
 
-<div class="card auth-card">
-    <div class="card-body p-4">
-        <h1 class="h3 mb-4 text-center">Create an account</h1>
-
-        <EditForm Model="_model" OnValidSubmit="RegisterAsync">
-            <div class="mb-3">
-                <label class="form-label" for="displayName">Name</label>
-                <input id="displayName" class="form-control" @bind="_model.DisplayName" required />
-            </div>
-            <div class="mb-3">
-                <label class="form-label" for="email">Email</label>
-                <input id="email" class="form-control" @bind="_model.Email" type="email" required />
-            </div>
-            <div class="mb-3">
-                <label class="form-label" for="password">Password</label>
-                <input id="password" class="form-control" @bind="_model.Password" type="password" minlength="8" required />
-                <div class="form-text">At least 8 characters.</div>
-            </div>
-
-            @if (_error is not null)
-            {
-                <div class="alert alert-danger py-2">@_error</div>
-            }
-
-            <button type="submit" class="btn btn-primary w-100" disabled="@_isBusy">
-                @if (_isBusy)
-                {
-                    <span class="spinner-border spinner-border-sm me-2"></span>
-                }
-                Register
-            </button>
-        </EditForm>
-
-        <p class="text-center mt-3 mb-0">
-            <a href="login">Already have an account? Log in</a>
-        </p>
+<div class="card pf-auth-card">
+    <div class="pf-auth-brand">
+        <span class="brand-logo"><svg viewBox="0 0 36 36"><use href="#i-logo"></use></svg></span>
+        <span class="brand-name">Финансы</span>
     </div>
+    <div>
+        <h1 class="pf-h" style="font-size:24px" tabindex="-1">Регистрация</h1>
+        <div class="field-help" style="font-size:13px;margin-top:4px">Первый счёт и базовые категории создадутся автоматически.</div>
+    </div>
+
+    <EditForm Model="_model" OnSubmit="RegisterAsync" style="display:flex;flex-direction:column;gap:16px">
+        <div class="field">
+            <label class="field-label" for="displayName">Имя</label>
+            <input id="displayName" class="input" autocomplete="name" required @bind="_model.DisplayName" />
+        </div>
+        <div class="field">
+            <label class="field-label" for="email">Email <span class="req">*</span></label>
+            <input id="email" class="input" type="email" autocomplete="email" required @bind="_model.Email" />
+        </div>
+        <div class="field">
+            <label class="field-label" for="password">Пароль <span class="req">*</span></label>
+            <input id="password" class="input @(_passwordError is null ? null : "is-invalid")" type="password" autocomplete="new-password"
+                   placeholder="Минимум 8 символов" minlength="8" required @bind="_model.Password" />
+            @if (_passwordError is not null)
+            {
+                <span class="field-error">@_passwordError</span>
+            }
+        </div>
+
+        @if (_error is not null)
+        {
+            <div class="pf-alert" role="alert"><Icon Name="alert" />@_error</div>
+        }
+
+        <button type="submit" class="btn btn--primary btn--block" style="padding:11px" disabled="@_isBusy">
+            @(_isBusy ? "Создаём…" : "Создать аккаунт")
+        </button>
+    </EditForm>
+
+    <div class="pf-auth-foot">Уже есть аккаунт? <a href="login">Войти</a></div>
 </div>
 
 @code {
+    private static readonly (string Name, CategoryType Type, string Icon)[] StarterCategories =
+    {
+        ("Продукты", CategoryType.Expense, "cart"),
+        ("Транспорт", CategoryType.Expense, "bus"),
+        ("Кафе", CategoryType.Expense, "cup"),
+        ("Жильё", CategoryType.Expense, "home"),
+        ("Связь", CategoryType.Expense, "wifi"),
+        ("Здоровье", CategoryType.Expense, "heart"),
+        ("Прочее", CategoryType.Expense, "dots"),
+        ("Зарплата", CategoryType.Income, "case"),
+        ("Фриланс", CategoryType.Income, "laptop")
+    };
+
     private readonly RegisterModel _model = new();
     private string? _error;
+    private string? _passwordError;
     private bool _isBusy;
 
     protected override async Task OnInitializedAsync()
@@ -57,16 +76,30 @@
         var state = await AuthStateProvider.GetAuthenticationStateAsync();
         if (state.User.Identity?.IsAuthenticated ?? false)
         {
-            Navigation.NavigateTo("/transactions");
+            Navigation.NavigateTo("/");
         }
     }
 
     private async Task RegisterAsync()
     {
+        _passwordError = _model.Password.Length < 8 ? "Минимум 8 символов" : null;
+        if (_passwordError is not null)
+        {
+            return;
+        }
+
         _isBusy = true;
         _error = null;
 
-        var result = await AuthService.RegisterAsync(_model.Email, _model.Password, _model.DisplayName);
+        LoginResult result;
+        try
+        {
+            result = await AuthService.RegisterAsync(_model.Email, _model.Password, _model.DisplayName);
+        }
+        catch (HttpRequestException)
+        {
+            result = new LoginResult(false, "Сервер недоступен. Для регистрации нужна сеть.");
+        }
 
         if (!result.Success)
         {
@@ -75,8 +108,27 @@
             return;
         }
 
+        await SeedStarterDataAsync();
         _ = SyncService.SyncAsync();
-        Navigation.NavigateTo("/transactions");
+        Navigation.NavigateTo("/");
+    }
+
+    // Created locally like any other edit (client-side Guids + outbox), so they reach the
+    // server through the normal push. Skipped if this device already has data.
+    private async Task SeedStarterDataAsync()
+    {
+        if ((await AccountService.GetAllAsync()).Count == 0)
+        {
+            await AccountService.CreateAsync("Основной счёт", "USD", 0);
+        }
+
+        if ((await CategoryService.GetAllAsync()).Count == 0)
+        {
+            foreach (var (name, type, icon) in StarterCategories)
+            {
+                await CategoryService.CreateAsync(name, type, icon, Visuals.ToneFor(icon));
+            }
+        }
     }
 
     private class RegisterModel

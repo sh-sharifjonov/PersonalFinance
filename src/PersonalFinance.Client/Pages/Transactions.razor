@@ -1,277 +1,182 @@
 @page "/transactions"
 @attribute [Authorize]
-@using PersonalFinance.Client.Services
-@using PersonalFinance.Domain.Entities
-@using PersonalFinance.Domain.Enums
-@inject LocalTransactionService TransactionService
-@inject LocalAccountService AccountService
-@inject LocalCategoryService CategoryService
+@implements IDisposable
+@inject FinanceDataService DataService
+@inject AppState AppState
 
-<PageTitle>Transactions</PageTitle>
+<PageTitle>Операции · Финансы</PageTitle>
 
-<h1 class="h3 mb-3">Transactions</h1>
+<PageTop Title="Операции">
+    <button type="button" class="btn btn--primary pf-hide-mobile" @onclick="() => AppState.OpenTransactionEditor()"><Icon Name="plus" />Новая операция</button>
+</PageTop>
 
-@if (_transactions is not null && _transactions.Count > 0)
-{
-    <div class="row g-3 mb-4">
-        <div class="col-sm-4">
-            <div class="card summary-card">
-                <div class="card-body">
-                    <div class="text-muted small">Income</div>
-                    <div class="value amount-income">@TotalIncome.ToString("N2")</div>
+<div class="pf-body">
+    @if (_data is null)
+    {
+        <div class="pf-empty-inline">Загрузка…</div>
+    }
+    else if (_data.Transactions.Count == 0)
+    {
+        <EmptyState Title="Пока ни одной операции" Text="Добавьте первый расход или доход — он сохранится на устройстве даже без интернета.">
+            <button type="button" class="btn btn--primary" @onclick="() => AppState.OpenTransactionEditor()"><Icon Name="plus" />Новая операция</button>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="card">
+            <div class="pf-filters">
+                <div class="input-icon">
+                    <span class="ico"><Icon Name="search" Class="@null" /></span>
+                    <input class="input" type="search" placeholder="Поиск по заметкам" aria-label="Поиск"
+                           @bind="_search" @bind:event="oninput" @bind:after="ResetPaging" />
                 </div>
-            </div>
-        </div>
-        <div class="col-sm-4">
-            <div class="card summary-card">
-                <div class="card-body">
-                    <div class="text-muted small">Expenses</div>
-                    <div class="value amount-expense">@TotalExpense.ToString("N2")</div>
+                <div class="tabs pills bare" role="tablist">
+                    <span class="tab @(_type is null ? "is-active" : null)" role="tab" @onclick="() => SetType(null)">Все</span>
+                    <span class="tab @(_type == TransactionType.Expense ? "is-active" : null)" role="tab" @onclick="() => SetType(TransactionType.Expense)">Расходы</span>
+                    <span class="tab @(_type == TransactionType.Income ? "is-active" : null)" role="tab" @onclick="() => SetType(TransactionType.Income)">Доходы</span>
                 </div>
-            </div>
-        </div>
-        <div class="col-sm-4">
-            <div class="card summary-card">
-                <div class="card-body">
-                    <div class="text-muted small">Net</div>
-                    <div class="value @(Net >= 0 ? "amount-income" : "amount-expense")">@Net.ToString("N2")</div>
-                </div>
-            </div>
-        </div>
-    </div>
-}
-
-@if (_accounts is null || _categories is null)
-{
-    <p class="text-muted">Loading...</p>
-}
-else if (_accounts.Count == 0)
-{
-    <div class="empty-state">Add an <a href="accounts">account</a> first.</div>
-}
-else if (_categories.Count == 0)
-{
-    <div class="empty-state">Add a <a href="categories">category</a> first.</div>
-}
-else
-{
-    <div class="card mb-4">
-        <div class="card-body">
-            <h2 class="h6 text-uppercase text-muted mb-3">@(_editingId is null ? "Add transaction" : "Edit transaction")</h2>
-            <EditForm Model="_formModel" OnValidSubmit="SaveTransactionAsync">
-                <div class="row g-2 align-items-end">
-                    <div class="col-md-3">
-                        <label class="form-label">Account</label>
-                        <select class="form-select" @bind="_formModel.AccountId">
-                            @foreach (var account in _accounts)
-                            {
-                                <option value="@account.Id">@account.Name</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">Category</label>
-                        <select class="form-select" @bind="_formModel.CategoryId">
-                            @foreach (var category in _categories)
-                            {
-                                <option value="@category.Id">@category.Name</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Type</label>
-                        <select class="form-select" @bind="_formModel.Type">
-                            <option value="@TransactionType.Expense">Expense</option>
-                            <option value="@TransactionType.Income">Income</option>
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Amount</label>
-                        <input type="number" step="0.01" class="form-control" @bind="_formModel.Amount" />
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Date</label>
-                        <input type="date" class="form-control" @bind="_formModel.Date" />
-                    </div>
-                    <div class="col-md-10">
-                        <label class="form-label">Note</label>
-                        <input class="form-control" @bind="_formModel.Note" placeholder="Optional" />
-                    </div>
-                    <div class="col-md-2 d-grid">
-                        <button type="submit" class="btn btn-primary">@(_editingId is null ? "Add" : "Save")</button>
-                    </div>
-                </div>
-                @if (_editingId is not null)
-                {
-                    <button type="button" class="btn btn-link btn-sm mt-2 p-0" @onclick="CancelEdit">Cancel edit</button>
-                }
-            </EditForm>
-        </div>
-    </div>
-}
-
-@if (_transactions is null)
-{
-    <p class="text-muted">Loading...</p>
-}
-else if (_transactions.Count == 0)
-{
-    <div class="empty-state">No transactions yet.</div>
-}
-else
-{
-    <div class="card">
-        <div class="table-responsive">
-            <table class="table align-middle mb-0">
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Account</th>
-                        <th>Category</th>
-                        <th>Type</th>
-                        <th class="text-end">Amount</th>
-                        <th>Note</th>
-                        <th class="text-end">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var transaction in _transactions)
+                <select class="select" aria-label="Счёт" @bind="_accountId" @bind:after="ResetPaging">
+                    <option value="@Guid.Empty">Все счета</option>
+                    @foreach (var account in _data.Accounts)
                     {
-                        <tr>
-                            <td>@transaction.Date.ToString("yyyy-MM-dd")</td>
-                            <td>@AccountName(transaction.AccountId)</td>
-                            <td>@CategoryName(transaction.CategoryId)</td>
-                            <td>
-                                <span class="badge @(transaction.Type == TransactionType.Income ? "bg-success" : "bg-danger")">
-                                    @transaction.Type
-                                </span>
-                            </td>
-                            <td class="text-end @(transaction.Type == TransactionType.Income ? "amount-income" : "amount-expense")">
-                                @(transaction.Type == TransactionType.Income ? "+" : "-")@transaction.Amount.ToString("N2")
-                            </td>
-                            <td class="text-muted">@transaction.Note</td>
-                            <td class="text-end">
-                                <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => StartEdit(transaction)">Edit</button>
-                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteTransactionAsync(transaction.Id)">Delete</button>
-                            </td>
-                        </tr>
+                        <option value="@account.Id">@account.Name</option>
                     }
-                </tbody>
-            </table>
+                </select>
+                <div class="pf-month">
+                    <button type="button" class="btn btn--ghost" aria-label="Предыдущий месяц" @onclick="() => ShiftMonth(-1)"><Icon Name="chev-left" /></button>
+                    <button type="button" class="btn btn--ghost pf-month-label" title="Показать все месяцы" @onclick="ToggleAllTime">
+                        <Icon Name="cal" />@(_month is { } m ? Fmt.MonthYear(m.Year, m.Month) : "Всё время")
+                    </button>
+                    <button type="button" class="btn btn--ghost" aria-label="Следующий месяц" @onclick="() => ShiftMonth(1)"><Icon Name="chev-right" /></button>
+                </div>
+                <span class="pf-filters-summary">
+                    @Fmt.Operations(_filtered.Count) ·
+                    <span class="pf-amt" style="color:var(--primary)">@Fmt.Delta(_filteredNet, _data.Currency)</span>
+                </span>
+            </div>
+
+            @if (_filtered.Count == 0)
+            {
+                <div class="pf-empty-inline">Под фильтр ничего не попало.</div>
+            }
+            else
+            {
+                @foreach (var day in _filtered.Take(_visible).GroupBy(t => t.Date))
+                {
+                    var dayNet = day.Sum(FinanceSnapshot.SignedAmount);
+                    <div class="pf-day">
+                        <span class="eyebrow">@Fmt.DayHeading(day.Key, _today)</span>
+                        <span class="pf-amt @(dayNet >= 0 ? "pos" : "muted")">@Fmt.Delta(dayNet, _data.Currency)</span>
+                    </div>
+                    @foreach (var transaction in day)
+                    {
+                        <TransactionRow Transaction="transaction" Data="_data" ShowPending="true" />
+                    }
+                }
+
+                @if (_filtered.Count > _visible)
+                {
+                    <button type="button" class="btn btn--ghost" style="align-self:center;margin-top:14px" @onclick="() => _visible += PageSize">Показать ещё</button>
+                }
+            }
         </div>
-    </div>
-}
+    }
+</div>
 
 @code {
-    private List<Account>? _accounts;
-    private List<Category>? _categories;
-    private List<Transaction>? _transactions;
-    private Guid? _editingId;
-    private TransactionFormModel _formModel = new();
+    private const int PageSize = 50;
 
-    private decimal TotalIncome => _transactions?.Where(t => t.Type == TransactionType.Income).Sum(t => t.Amount) ?? 0;
-    private decimal TotalExpense => _transactions?.Where(t => t.Type == TransactionType.Expense).Sum(t => t.Amount) ?? 0;
-    private decimal Net => TotalIncome - TotalExpense;
+    private FinanceSnapshot? _data;
+    private DateOnly _today;
+    private string? _search;
+    private TransactionType? _type;
+    private Guid _accountId = Guid.Empty;
+    private DateOnly? _month;
+    private int _visible = PageSize;
+
+    private List<Transaction> _filtered = new();
+    private decimal _filteredNet;
 
     protected override async Task OnInitializedAsync()
     {
+        AppState.DataChanged += OnDataChanged;
+        _today = FinanceSnapshot.Today;
+        _month = new DateOnly(_today.Year, _today.Month, 1);
         await LoadAsync();
     }
 
     private async Task LoadAsync()
     {
-        _accounts = await AccountService.GetAllAsync();
-        _categories = await CategoryService.GetAllAsync();
-        _transactions = await TransactionService.GetAllAsync();
-
-        if (_editingId is null)
-        {
-            if (_formModel.AccountId == Guid.Empty && _accounts.Count > 0)
-            {
-                _formModel.AccountId = _accounts[0].Id;
-            }
-
-            if (_formModel.CategoryId == Guid.Empty && _categories.Count > 0)
-            {
-                _formModel.CategoryId = _categories[0].Id;
-            }
-        }
+        _data = await DataService.LoadAsync();
+        ApplyFilters();
     }
 
-    private void StartEdit(Transaction transaction)
+    private void ApplyFilters()
     {
-        _editingId = transaction.Id;
-        _formModel = new TransactionFormModel
+        if (_data is null)
         {
-            AccountId = transaction.AccountId,
-            CategoryId = transaction.CategoryId,
-            Type = transaction.Type,
-            Amount = transaction.Amount,
-            Date = transaction.Date,
-            Note = transaction.Note
-        };
-    }
-
-    private void CancelEdit()
-    {
-        _editingId = null;
-        _formModel = new TransactionFormModel
-        {
-            AccountId = _accounts?.FirstOrDefault()?.Id ?? Guid.Empty,
-            CategoryId = _categories?.FirstOrDefault()?.Id ?? Guid.Empty
-        };
-    }
-
-    private async Task SaveTransactionAsync()
-    {
-        if (_editingId is { } id)
-        {
-            await TransactionService.UpdateAsync(
-                id,
-                _formModel.AccountId,
-                _formModel.CategoryId,
-                _formModel.Type,
-                _formModel.Amount,
-                _formModel.Date,
-                string.IsNullOrWhiteSpace(_formModel.Note) ? null : _formModel.Note);
-        }
-        else
-        {
-            await TransactionService.CreateAsync(
-                _formModel.AccountId,
-                _formModel.CategoryId,
-                _formModel.Type,
-                _formModel.Amount,
-                _formModel.Date,
-                string.IsNullOrWhiteSpace(_formModel.Note) ? null : _formModel.Note);
+            return;
         }
 
-        CancelEdit();
+        IEnumerable<Transaction> query = _data.Transactions;
+
+        if (_month is { } month)
+        {
+            query = query.Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month);
+        }
+
+        if (_type is { } type)
+        {
+            query = query.Where(t => t.Type == type);
+        }
+
+        if (_accountId != Guid.Empty)
+        {
+            query = query.Where(t => t.AccountId == _accountId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var term = _search.Trim();
+            query = query.Where(t =>
+                (t.Note?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (_data.CategoryOf(t)?.Name.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        _filtered = query.ToList();
+        _filteredNet = _filtered.Sum(FinanceSnapshot.SignedAmount);
+    }
+
+    private void ResetPaging()
+    {
+        _visible = PageSize;
+        ApplyFilters();
+    }
+
+    private void SetType(TransactionType? type)
+    {
+        _type = type;
+        ResetPaging();
+    }
+
+    private void ShiftMonth(int delta)
+    {
+        var current = _month ?? new DateOnly(_today.Year, _today.Month, 1);
+        _month = current.AddMonths(delta);
+        ResetPaging();
+    }
+
+    private void ToggleAllTime()
+    {
+        _month = _month is null ? new DateOnly(_today.Year, _today.Month, 1) : null;
+        ResetPaging();
+    }
+
+    private void OnDataChanged() => InvokeAsync(async () =>
+    {
         await LoadAsync();
-    }
+        StateHasChanged();
+    });
 
-    private async Task DeleteTransactionAsync(Guid id)
-    {
-        if (_editingId == id)
-        {
-            CancelEdit();
-        }
-
-        await TransactionService.DeleteAsync(id);
-        await LoadAsync();
-    }
-
-    private string AccountName(Guid id) => _accounts?.FirstOrDefault(a => a.Id == id)?.Name ?? "?";
-
-    private string CategoryName(Guid id) => _categories?.FirstOrDefault(c => c.Id == id)?.Name ?? "?";
-
-    private class TransactionFormModel
-    {
-        public Guid AccountId { get; set; }
-        public Guid CategoryId { get; set; }
-        public TransactionType Type { get; set; } = TransactionType.Expense;
-        public decimal Amount { get; set; }
-        public DateOnly Date { get; set; } = DateOnly.FromDateTime(DateTime.Today);
-        public string? Note { get; set; }
-    }
+    public void Dispose() => AppState.DataChanged -= OnDataChanged;
 }

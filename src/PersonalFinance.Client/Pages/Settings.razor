@@ -1,0 +1,215 @@
+@page "/settings"
+@attribute [Authorize]
+@using System.Security.Claims
+@using System.Text.Json
+@using PersonalFinance.Client.Auth
+@using PersonalFinance.Client.Sync
+@implements IDisposable
+@inject FinanceDataService DataService
+@inject PreferencesService Preferences
+@inject SyncService Sync
+@inject AuthService AuthService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject AppState AppState
+@inject IJSRuntime JS
+
+<PageTitle>Настройки · Финансы</PageTitle>
+
+<PageTop Title="Настройки" />
+
+<div class="pf-body pf-grid-half" style="display:grid">
+    <div class="pf-stack">
+        <div class="card" style="gap:14px">
+            <div class="card-head" style="margin-bottom:0">
+                <div class="card-title-wrap"><span class="eyebrow">Аккаунт</span><h3 class="card-title">Профиль</h3></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px">
+                <span class="workspace-avatar" style="width:48px;height:48px;font-size:16px">@Fmt.Initials(_name)</span>
+                <span style="min-width:0">
+                    <span class="pf-t" style="font-size:15px">@_name</span>
+                    <span class="pf-s mono">@_email</span>
+                </span>
+            </div>
+            <div class="pf-actions only-mobile" style="margin-top:0">
+                <a class="btn btn--ghost" href="categories"><Icon Name="tag" />Категории</a>
+            </div>
+        </div>
+
+        <div class="card" style="gap:14px">
+            <div class="card-head" style="margin-bottom:0">
+                <div class="card-title-wrap"><span class="eyebrow">Предпочтения</span><h3 class="card-title">Отображение</h3></div>
+            </div>
+            <div class="field">
+                <label class="field-label" for="pref-currency">Основная валюта</label>
+                <select id="pref-currency" class="select" @bind="_currency" @bind:after="SaveCurrencyAsync">
+                    @foreach (var currency in _currencyOptions)
+                    {
+                        <option value="@currency">@currency</option>
+                    }
+                </select>
+                <span class="field-help">В ней показываются итоги по всем счетам. Курсы валют не пересчитываются.</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="pref-account">Счёт по умолчанию</label>
+                <select id="pref-account" class="select" @bind="_defaultAccountId" @bind:after="SaveDefaultAccountAsync">
+                    <option value="@Guid.Empty">Первый по алфавиту</option>
+                    @foreach (var account in _accounts)
+                    {
+                        <option value="@account.Id">@account.Name</option>
+                    }
+                </select>
+            </div>
+            <label class="switch">
+                <input type="checkbox" @bind="_dark" @bind:after="SaveThemeAsync" />
+                <span class="track"></span>Тёмная тема
+            </label>
+        </div>
+    </div>
+
+    <div class="pf-stack">
+        <div class="card" style="gap:4px">
+            <div class="card-head">
+                <div class="card-title-wrap"><span class="eyebrow">Офлайн</span><h3 class="card-title">Синхронизация</h3></div>
+                @if (Sync.IsOnline)
+                {
+                    <span class="badge success dot">В сети</span>
+                }
+                else
+                {
+                    <span class="badge dot">Офлайн</span>
+                }
+            </div>
+            <div class="pf-kv"><span>Последняя загрузка</span><span>@(_lastPulledAt?.ToLocalTime().ToString("dd.MM.yyyy HH:mm") ?? "ещё не было")</span></div>
+            <div class="pf-kv"><span>В очереди</span><span>@Fmt.Plural(Sync.PendingCount, "запись", "записи", "записей")</span></div>
+            <div class="pf-kv"><span>Разрешение конфликтов</span><span>Last-Write-Wins</span></div>
+            @if (Sync.HasError)
+            {
+                <div class="pf-alert" style="margin-top:8px"><Icon Name="alert" />Сервер недоступен. Изменения сохранены на устройстве, повтор через @((int)SyncService.RetryDelay.TotalSeconds) с.</div>
+            }
+            <div class="pf-actions">
+                <button type="button" class="btn btn--primary" disabled="@(Sync.IsSyncing || !Sync.IsOnline)" @onclick="SyncNowAsync">
+                    <Icon Name="sync" />@(Sync.IsSyncing ? "Синхронизация…" : "Синхронизировать")
+                </button>
+            </div>
+        </div>
+
+        <div class="card" style="gap:4px">
+            <div class="card-head">
+                <div class="card-title-wrap"><span class="eyebrow">Устройство</span><h3 class="card-title">Данные</h3></div>
+            </div>
+            <div class="pf-kv"><span>Локальная база</span><span>IndexedDB</span></div>
+            @if (_storage is not null)
+            {
+                <div class="pf-kv"><span>Занято на устройстве</span><span>@_storage</span></div>
+            }
+            <div class="pf-kv"><span>Приложение</span><span>@(_standalone ? "PWA · установлено" : "в браузере")</span></div>
+            <div class="pf-actions">
+                <button type="button" class="btn btn--ghost" @onclick="ExportAsync"><Icon Name="down" />Экспорт данных</button>
+                <button type="button" class="btn btn--ghost" style="margin-left:auto" @onclick="LogoutAsync"><Icon Name="out" />Выйти</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string? _name;
+    private string? _email;
+    private List<Account> _accounts = new();
+    private List<string> _currencyOptions = new();
+    private string _currency = "USD";
+    private Guid _defaultAccountId = Guid.Empty;
+    private bool _dark;
+    private DateTime? _lastPulledAt;
+    private string? _storage;
+    private bool _standalone;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Sync.StateChanged += OnSyncStateChanged;
+        AppState.DataChanged += OnDataChanged;
+
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _name = state.User.Identity?.Name;
+        _email = state.User.FindFirst(ClaimTypes.Email)?.Value;
+
+        _dark = await Preferences.GetDarkThemeAsync();
+        _defaultAccountId = await Preferences.GetDefaultAccountIdAsync() ?? Guid.Empty;
+        await LoadAsync();
+
+        try
+        {
+            var bytes = await JS.InvokeAsync<double>("pfApp.storageUsageBytes");
+            _storage = bytes < 0 ? null : bytes >= 1024 * 1024 ? $"{bytes / 1024 / 1024:0.0} МБ" : $"{Math.Ceiling(bytes / 1024)} КБ";
+            _standalone = await JS.InvokeAsync<bool>("pfApp.isStandalone");
+        }
+        catch (JSException)
+        {
+            // Storage estimate is informational only.
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        var data = await DataService.LoadAsync();
+        _accounts = data.Accounts;
+        _currency = data.Currency;
+        _currencyOptions = data.Accounts.Select(a => a.Currency).Append("USD").Append(_currency).Distinct().Order().ToList();
+        _lastPulledAt = await Sync.GetLastPulledAtAsync();
+    }
+
+    private async Task SaveCurrencyAsync()
+    {
+        await Preferences.SetCurrencyAsync(_currency);
+        AppState.NotifyDataChanged();
+    }
+
+    private async Task SaveDefaultAccountAsync() =>
+        await Preferences.SetDefaultAccountIdAsync(_defaultAccountId == Guid.Empty ? null : _defaultAccountId);
+
+    private Task SaveThemeAsync() => Preferences.SetDarkThemeAsync(_dark);
+
+    private async Task SyncNowAsync()
+    {
+        await Sync.SyncAsync();
+        _lastPulledAt = await Sync.GetLastPulledAtAsync();
+    }
+
+    private async Task ExportAsync()
+    {
+        var data = await DataService.LoadAsync();
+        var json = JsonSerializer.Serialize(new
+        {
+            exportedAt = DateTime.UtcNow,
+            accounts = data.Accounts.Select(a => new { a.Id, a.Name, a.Currency, a.InitialBalance, a.CreatedAt, a.UpdatedAt }),
+            categories = data.Categories.Select(c => new { c.Id, c.Name, Type = c.Type.ToString(), c.Icon, c.Color, c.CreatedAt, c.UpdatedAt }),
+            transactions = data.Transactions.Select(t => new { t.Id, t.AccountId, t.CategoryId, Type = t.Type.ToString(), t.Amount, t.Date, t.Note, t.CreatedAt, t.UpdatedAt })
+        }, new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+
+        await JS.InvokeVoidAsync("pfApp.downloadText", $"finance-export-{DateTime.Today:yyyy-MM-dd}.json", json, "application/json", false);
+    }
+
+    private async Task LogoutAsync()
+    {
+        await AuthService.LogoutAsync();
+        Navigation.NavigateTo("/");
+    }
+
+    private void OnSyncStateChanged() => InvokeAsync(async () =>
+    {
+        _lastPulledAt = await Sync.GetLastPulledAtAsync();
+        StateHasChanged();
+    });
+
+    private void OnDataChanged() => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        Sync.StateChanged -= OnSyncStateChanged;
+        AppState.DataChanged -= OnDataChanged;
+    }
+}
