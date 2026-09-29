@@ -6,40 +6,39 @@
 @inject SyncService SyncService
 @inject NavigationManager Navigation
 
-<PageTitle>Log in</PageTitle>
+<PageTitle>Вход · Финансы</PageTitle>
 
-<div class="card auth-card">
-    <div class="card-body p-4">
-        <h1 class="h3 mb-4 text-center">Log in</h1>
-
-        <EditForm Model="_model" OnValidSubmit="LoginAsync">
-            <div class="mb-3">
-                <label class="form-label" for="email">Email</label>
-                <input id="email" class="form-control" @bind="_model.Email" type="email" required />
-            </div>
-            <div class="mb-3">
-                <label class="form-label" for="password">Password</label>
-                <input id="password" class="form-control" @bind="_model.Password" type="password" required />
-            </div>
-
-            @if (_error is not null)
-            {
-                <div class="alert alert-danger py-2">@_error</div>
-            }
-
-            <button type="submit" class="btn btn-primary w-100" disabled="@_isBusy">
-                @if (_isBusy)
-                {
-                    <span class="spinner-border spinner-border-sm me-2"></span>
-                }
-                Log in
-            </button>
-        </EditForm>
-
-        <p class="text-center mt-3 mb-0">
-            <a href="register">Don't have an account? Register</a>
-        </p>
+<div class="card pf-auth-card">
+    <div class="pf-auth-brand">
+        <span class="brand-logo"><svg viewBox="0 0 36 36"><use href="#i-logo"></use></svg></span>
+        <span class="brand-name">Финансы</span>
     </div>
+    <div>
+        <h1 class="pf-h" style="font-size:24px" tabindex="-1">Вход</h1>
+        <div class="field-help" style="font-size:13px;margin-top:4px">Данные хранятся на устройстве и синхронизируются при появлении сети.</div>
+    </div>
+
+    <EditForm Model="_model" OnSubmit="LoginAsync" style="display:flex;flex-direction:column;gap:16px">
+        <div class="field">
+            <label class="field-label" for="email">Email</label>
+            <input id="email" class="input" type="email" autocomplete="email" required @bind="_model.Email" />
+        </div>
+        <div class="field">
+            <label class="field-label" for="password">Пароль</label>
+            <input id="password" class="input" type="password" autocomplete="current-password" required @bind="_model.Password" />
+        </div>
+
+        @if (_error is not null)
+        {
+            <div class="pf-alert" role="alert"><Icon Name="alert" />@_error</div>
+        }
+
+        <button type="submit" class="btn btn--primary btn--block" style="padding:11px" disabled="@_isBusy">
+            @(_isBusy ? "Входим…" : "Войти")
+        </button>
+    </EditForm>
+
+    <div class="pf-auth-foot">Нет аккаунта? <a href="register">Создать</a></div>
 </div>
 
 @code {
@@ -52,7 +51,7 @@
         var state = await AuthStateProvider.GetAuthenticationStateAsync();
         if (state.User.Identity?.IsAuthenticated ?? false)
         {
-            Navigation.NavigateTo("/transactions");
+            Navigation.NavigateTo("/");
         }
     }
 
@@ -61,7 +60,15 @@
         _isBusy = true;
         _error = null;
 
-        var result = await AuthService.LoginAsync(_model.Email, _model.Password);
+        LoginResult result;
+        try
+        {
+            result = await AuthService.LoginAsync(_model.Email, _model.Password);
+        }
+        catch (HttpRequestException)
+        {
+            result = new LoginResult(false, "Сервер недоступен. Для входа нужна сеть.");
+        }
 
         if (!result.Success)
         {
@@ -71,7 +78,7 @@
         }
 
         _ = SyncService.SyncAsync();
-        Navigation.NavigateTo("/transactions");
+        Navigation.NavigateTo("/");
     }
 
     private class LoginModel

@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/PersonalFinance.Api", "--launch-profile", "http"],
+      "port": 5080
+    },
+    {
+      "name": "client",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/PersonalFinance.Client", "--launch-profile", "http"],
+      "port": 5248
+    }
+  ]
+}

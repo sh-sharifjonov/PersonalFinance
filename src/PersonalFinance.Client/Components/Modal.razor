@@ -1,0 +1,32 @@
+@* Dialog shell: centered card on desktop, full-screen sheet on phones (see app.css).
+   Callers render their own .modal-body / .modal-foot so both can sit inside one EditForm. *@
+@if (Open)
+{
+    <div class="pf-modal-scrim" @onmousedown="OnScrimMouseDown" @onkeydown="OnKeyDown">
+        <div class="modal-demo pf-modal" role="dialog" aria-modal="true" aria-label="@Title"
+             @onmousedown:stopPropagation="true">
+            <div class="modal-head">
+                <span class="modal-title">@Title</span>
+                <button type="button" class="icon-btn" aria-label="Закрыть" @onclick="CloseAsync"><Icon Name="x" /></button>
+            </div>
+            @ChildContent
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private Task CloseAsync() => OnClose.InvokeAsync();
+
+    // mousedown (not click) so a text selection that ends on the scrim doesn't close the dialog.
+    private Task OnScrimMouseDown() => CloseAsync();
+
+    private Task OnKeyDown(KeyboardEventArgs e) => e.Key == "Escape" ? CloseAsync() : Task.CompletedTask;
+}

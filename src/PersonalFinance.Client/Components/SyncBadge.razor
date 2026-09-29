@@ -1,0 +1,40 @@
+@using PersonalFinance.Client.Sync
+@implements IDisposable
+@inject SyncService Sync
+
+<button type="button" class="pf-sync @_state.Css" title="Синхронизировать сейчас" @onclick="SyncNowAsync">
+    <Icon Name="@_state.Icon" />@_state.Label
+</button>
+
+@code {
+    private (string Css, string Icon, string Label) _state;
+
+    protected override void OnInitialized()
+    {
+        Sync.StateChanged += OnSyncStateChanged;
+        Compute();
+    }
+
+    private void Compute()
+    {
+        var pending = Sync.PendingCount;
+        _state = true switch
+        {
+            _ when !Sync.IsOnline => ("is-offline", "off", pending > 0 ? $"Офлайн · {pending} в очереди" : "Офлайн"),
+            _ when Sync.IsSyncing => ("is-busy", "sync", pending > 0 ? $"Синхронизация… {pending}" : "Синхронизация…"),
+            _ when Sync.HasError => ("is-error", "alert", $"Ошибка · повтор через {(int)SyncService.RetryDelay.TotalSeconds} с"),
+            _ when pending > 0 => ("is-pending", "sync", $"{pending} в очереди"),
+            _ => (string.Empty, "cloud", "Синхронизировано")
+        };
+    }
+
+    private Task SyncNowAsync() => Sync.SyncAsync();
+
+    private void OnSyncStateChanged() => InvokeAsync(() =>
+    {
+        Compute();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Sync.StateChanged -= OnSyncStateChanged;
+}

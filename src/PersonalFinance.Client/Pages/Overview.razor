@@ -1,0 +1,267 @@
+@* Dashboard for signed-in users (design 2a). Rendered by Home.razor at "/". *@
+@using System.Globalization
+@implements IDisposable
+@inject FinanceDataService DataService
+@inject AppState AppState
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Обзор · Финансы</PageTitle>
+
+<PageTop Title="Обзор">
+    <button type="button" class="btn btn--primary pf-hide-mobile" @onclick="() => AppState.OpenTransactionEditor()"><Icon Name="plus" />Новая операция</button>
+</PageTop>
+
+<div class="pf-body">
+    @if (_data is null)
+    {
+        <div class="pf-empty-inline">Загрузка…</div>
+    }
+    else if (_data.Accounts.Count == 0)
+    {
+        <EmptyState IconName="wallet" Title="Начните со счёта"
+                    Text="Добавьте карту, наличные или копилку — после этого можно записывать операции, даже без интернета.">
+            <button type="button" class="btn btn--primary" @onclick='() => Navigation.NavigateTo("accounts")'><Icon Name="plus" />Добавить счёт</button>
+        </EmptyState>
+    }
+    else
+    {
+        var cur = _data.Currency;
+
+        <div class="pf-hero">
+            <div>
+                <span class="eyebrow" style="display:block;margin-bottom:10px">@Fmt.MonthYear(_today.Year, _today.Month)</span>
+                <h2 class="pf-h">@Fmt.Greeting(DateTime.Now)@(string.IsNullOrEmpty(_firstName) ? "" : ", " + _firstName)</h2>
+                <div class="pf-hero-sub">
+                    @if (_income > 0 && _income > _expense)
+                    {
+                        <text>В этом месяце вы отложили <strong>@Fmt.Money(_income - _expense, cur)</strong>, это @Math.Round((_income - _expense) / _income * 100)% дохода.</text>
+                    }
+                    else if (_income > 0 || _expense > 0)
+                    {
+                        <text>Расходы в этом месяце — @Fmt.Money(_expense, cur), доходы — @Fmt.Money(_income, cur).</text>
+                    }
+                    else
+                    {
+                        <text>В этом месяце операций пока нет.</text>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="kpi-grid pf-kpi-3 pf-kpi-compact">
+            <div class="kpi-card c-primary">
+                <div class="kpi-top"><div class="kpi-identity"><span class="kpi-icon primary"><Icon Name="wallet" Class="@null" /></span><span class="kpi-label">Общий баланс</span></div></div>
+                <div class="kpi-value num pf-kpi-lg">@Fmt.Whole(_balance, cur)<sup>@Fmt.Cents(_balance, cur)</sup></div>
+                <div class="kpi-compare">
+                    @if (_balanceChange is { } change)
+                    {
+                        <span class="@(change >= 0 ? "up" : "down")">@(change >= 0 ? "▲" : "▼")</span><strong>@Fmt.SignedPercent(change)</strong><span class="sep">·</span><span>к прошлому месяцу</span>
+                    }
+                    else
+                    {
+                        <span>@Fmt.Plural(_data.Accounts.Count, "счёт", "счёта", "счетов")</span>
+                    }
+                </div>
+            </div>
+            <div class="kpi-card c-success">
+                <div class="kpi-top">
+                    <div class="kpi-identity"><span class="kpi-icon success"><Icon Name="up" Class="@null" /></span><span class="kpi-label">Доходы</span></div>
+                    <span class="kpi-pill up">@Fmt.Operations(_incomeCount)</span>
+                </div>
+                <div class="kpi-value num pf-kpi-lg">@Fmt.Whole(_income, cur)<sup>@Fmt.Cents(_income, cur)</sup></div>
+                <Compare Current="_income" Previous="_incomePrev" Label="@("к " + PrevMonthDative)" />
+            </div>
+            <div class="kpi-card c-danger">
+                <div class="kpi-top">
+                    <div class="kpi-identity"><span class="kpi-icon danger"><Icon Name="receipt" Class="@null" /></span><span class="kpi-label">Расходы</span></div>
+                    <span class="kpi-pill down">@Fmt.Operations(_expenseCount)</span>
+                </div>
+                <div class="kpi-value num pf-kpi-lg">@Fmt.Whole(_expense, cur)<sup>@Fmt.Cents(_expense, cur)</sup></div>
+                <Compare Current="_expense" Previous="_expensePrev" Label="@("к " + PrevMonthDative)" InvertTone="true" />
+            </div>
+        </div>
+
+        <div class="pf-grid-wide">
+            <div class="card">
+                <div class="card-head">
+                    <div class="card-title-wrap"><span class="eyebrow">Расходы</span><h3 class="card-title">@(_range == ChartRange.Year ? "По месяцам" : "По дням")</h3></div>
+                    <div class="tabs pills bare" role="tablist">
+                        <span class="tab @(_range == ChartRange.Week ? "is-active" : null)" role="tab" @onclick="() => SetRange(ChartRange.Week)">Неделя</span>
+                        <span class="tab @(_range == ChartRange.Month ? "is-active" : null)" role="tab" @onclick="() => SetRange(ChartRange.Month)">Месяц</span>
+                        <span class="tab @(_range == ChartRange.Year ? "is-active" : null)" role="tab" @onclick="() => SetRange(ChartRange.Year)">Год</span>
+                    </div>
+                </div>
+                <div class="pf-bars @(_bars.Count > 20 ? "dense" : null)" role="img" aria-label="Расходы по периодам">
+                    @for (var i = 0; i < _bars.Count; i++)
+                    {
+                        var bar = _bars[i];
+                        <span class="@BarClass(bar.Value)" style="height:@BarHeight(bar.Value);animation-delay:@(i * 18)ms" title="@bar.Title — @Fmt.Money(bar.Value, cur)"></span>
+                    }
+                </div>
+                <div class="pf-axis">
+                    @foreach (var label in AxisLabels())
+                    {
+                        <span>@label</span>
+                    }
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <div class="card-title-wrap"><span class="eyebrow">Недавние</span><h3 class="card-title">Операции</h3></div>
+                    <a class="card-action" href="transactions">Все →</a>
+                </div>
+                @if (_data.Transactions.Count == 0)
+                {
+                    <div class="pf-empty-inline">
+                        Пока ни одной операции.<br />
+                        <a href="" @onclick="() => AppState.OpenTransactionEditor()" @onclick:preventDefault="true">Добавить первую</a>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var transaction in _data.Transactions.Take(5))
+                    {
+                        <TransactionRow Transaction="transaction" Data="_data" ShowDate="true" />
+                    }
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private enum ChartRange { Week, Month, Year }
+
+    private record Bar(string Title, string Axis, decimal Value);
+
+    private static readonly string[] MonthsDative =
+        { "январю", "февралю", "марту", "апрелю", "маю", "июню", "июлю", "августу", "сентябрю", "октябрю", "ноябрю", "декабрю" };
+
+    private FinanceSnapshot? _data;
+    private DateOnly _today;
+    private string? _firstName;
+    private ChartRange _range = ChartRange.Month;
+    private List<Bar> _bars = new();
+    private decimal _barMax;
+
+    private decimal _balance, _income, _expense, _incomePrev, _expensePrev;
+    private decimal? _balanceChange;
+    private int _incomeCount, _expenseCount;
+
+    private string PrevMonthDative => MonthsDative[_today.AddMonths(-1).Month - 1];
+
+    protected override async Task OnInitializedAsync()
+    {
+        AppState.DataChanged += OnDataChanged;
+
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        _firstName = state.User.Identity?.Name?.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _data = await DataService.LoadAsync();
+        _today = FinanceSnapshot.Today;
+
+        var (from, to) = FinanceSnapshot.MonthRange(_today.Year, _today.Month);
+        var prev = _today.AddMonths(-1);
+        var (prevFrom, prevTo) = FinanceSnapshot.MonthRange(prev.Year, prev.Month);
+
+        var month = _data.Between(from, to).ToList();
+        var prevMonth = _data.Between(prevFrom, prevTo).ToList();
+
+        _income = FinanceSnapshot.Income(month);
+        _expense = FinanceSnapshot.Expense(month);
+        _incomeCount = month.Count(t => t.Type == TransactionType.Income);
+        _expenseCount = month.Count(t => t.Type == TransactionType.Expense);
+        _incomePrev = FinanceSnapshot.Income(prevMonth);
+        _expensePrev = FinanceSnapshot.Expense(prevMonth);
+
+        _balance = _data.TotalBalance;
+        var balancePrev = _data.BalanceAt(prevTo);
+        _balanceChange = balancePrev != 0 ? (_balance - balancePrev) / Math.Abs(balancePrev) * 100 : null;
+
+        BuildBars();
+    }
+
+    private void SetRange(ChartRange range)
+    {
+        _range = range;
+        BuildBars();
+    }
+
+    private void BuildBars()
+    {
+        if (_data is null)
+        {
+            return;
+        }
+
+        var expenses = _data.Live.Where(t => t.Type == TransactionType.Expense).ToList();
+
+        if (_range == ChartRange.Year)
+        {
+            _bars = Enumerable.Range(0, 12)
+                .Select(i => _today.AddMonths(i - 11))
+                .Select(m => new Bar(
+                    Fmt.MonthYear(m.Year, m.Month),
+                    Fmt.MonthAxis(m.Month),
+                    expenses.Where(t => t.Date.Year == m.Year && t.Date.Month == m.Month).Sum(t => t.Amount)))
+                .ToList();
+        }
+        else
+        {
+            var start = _range == ChartRange.Week ? _today.AddDays(-6) : new DateOnly(_today.Year, _today.Month, 1);
+            var byDay = expenses.Where(t => t.Date >= start && t.Date <= _today)
+                .GroupBy(t => t.Date)
+                .ToDictionary(g => g.Key, g => g.Sum(t => t.Amount));
+
+            _bars = Enumerable.Range(0, _today.DayNumber - start.DayNumber + 1)
+                .Select(start.AddDays)
+                .Select(d => new Bar(Fmt.DayMonth(d), $"{d.Day} {Fmt.MonthAxis(d.Month)}", byDay.GetValueOrDefault(d)))
+                .ToList();
+        }
+
+        _barMax = _bars.Count == 0 ? 0 : _bars.Max(b => b.Value);
+    }
+
+    private string BarHeight(decimal value) =>
+        _barMax <= 0 ? "2px" : Math.Max(1.5m, value / _barMax * 100).ToString("0.#", CultureInfo.InvariantCulture) + "%";
+
+    private string? BarClass(decimal value) =>
+        _barMax <= 0 || value <= 0 ? null
+        : value == _barMax ? "peak"
+        : value >= _barMax * 0.6m ? "mid"
+        : null;
+
+    private IEnumerable<string> AxisLabels()
+    {
+        if (_bars.Count == 0)
+        {
+            yield break;
+        }
+
+        yield return _bars[0].Axis;
+        if (_bars.Count > 2)
+        {
+            yield return _bars[_bars.Count / 2].Axis;
+        }
+
+        if (_bars.Count > 1)
+        {
+            yield return _bars[^1].Axis;
+        }
+    }
+
+    private void OnDataChanged() => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => AppState.DataChanged -= OnDataChanged;
+}

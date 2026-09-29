@@ -19,6 +19,9 @@ builder.Services.AddScoped<IndexedDbService>();
 builder.Services.AddScoped<LocalAccountService>();
 builder.Services.AddScoped<LocalCategoryService>();
 builder.Services.AddScoped<LocalTransactionService>();
+builder.Services.AddScoped<FinanceDataService>();
+builder.Services.AddScoped<PreferencesService>();
+builder.Services.AddScoped<AppState>();
 
 builder.Services.AddAuthorizationCore();
 builder.Services.AddScoped<JwtAuthenticationStateProvider>();
@@ -48,22 +51,7 @@ static async Task InitializeSyncAsync(IServiceProvider services)
 {
     try
     {
-        var connectivity = services.GetRequiredService<ConnectivityService>();
-        await connectivity.InitializeAsync();
-
-        var sync = services.GetRequiredService<SyncService>();
-        connectivity.OnlineStatusChanged += isOnline =>
-        {
-            if (isOnline)
-            {
-                _ = sync.SyncAsync();
-            }
-        };
-
-        if (connectivity.IsOnline)
-        {
-            _ = sync.SyncAsync();
-        }
+        await services.GetRequiredService<SyncService>().StartAsync();
     }
     catch (Exception ex)
     {

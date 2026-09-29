@@ -1,0 +1,17 @@
+<div class="card pf-empty">
+    <span class="kpi-icon primary"><Icon Name="@IconName" Class="@null" /></span>
+    <h3 class="card-title" style="margin-top:6px">@Title</h3>
+    <div class="field-help">@Text</div>
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public string IconName { get; set; } = "receipt";
+
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public string? Text { get; set; }
+
+    /// <summary>Call-to-action button(s).</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

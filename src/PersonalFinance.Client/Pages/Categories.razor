@@ -1,148 +1,220 @@
 @page "/categories"
 @attribute [Authorize]
-@using PersonalFinance.Client.Services
-@using PersonalFinance.Domain.Entities
-@using PersonalFinance.Domain.Enums
+@implements IDisposable
+@inject FinanceDataService DataService
 @inject LocalCategoryService CategoryService
+@inject AppState AppState
 
-<PageTitle>Categories</PageTitle>
+<PageTitle>Категории · Финансы</PageTitle>
 
-<h1 class="h3 mb-3">Categories</h1>
+<PageTop Title="Категории">
+    <button type="button" class="btn btn--primary pf-hide-mobile" @onclick="StartCreate"><Icon Name="plus" />Новая категория</button>
+</PageTop>
 
-<div class="card mb-4">
-    <div class="card-body">
-        <h2 class="h6 text-uppercase text-muted mb-3">@(_editingId is null ? "Add category" : "Edit category")</h2>
-        <EditForm Model="_formModel" OnValidSubmit="SaveCategoryAsync">
-            <div class="row g-2 align-items-end">
-                <div class="col-md-6">
-                    <label class="form-label">Name</label>
-                    <input class="form-control" @bind="_formModel.Name" required />
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Type</label>
-                    <select class="form-select" @bind="_formModel.Type">
-                        <option value="@CategoryType.Expense">Expense</option>
-                        <option value="@CategoryType.Income">Income</option>
-                    </select>
-                </div>
-                <div class="col-md-2 d-grid">
-                    <button type="submit" class="btn btn-primary">@(_editingId is null ? "Add" : "Save")</button>
+<div class="pf-body pf-grid-side" style="display:grid">
+    <div class="card">
+        <div class="tabs" role="tablist">
+            <span class="tab @(_tab == CategoryType.Expense ? "is-active" : null)" role="tab" @onclick="() => _tab = CategoryType.Expense">
+                Расходы<span class="badge @(_tab == CategoryType.Expense ? "primary" : null)">@CountOf(CategoryType.Expense)</span>
+            </span>
+            <span class="tab @(_tab == CategoryType.Income ? "is-active" : null)" role="tab" @onclick="() => _tab = CategoryType.Income">
+                Доходы<span class="badge @(_tab == CategoryType.Income ? "primary" : null)">@CountOf(CategoryType.Income)</span>
+            </span>
+        </div>
+
+        @if (_data is null)
+        {
+            <div class="pf-empty-inline">Загрузка…</div>
+        }
+        else if (CountOf(_tab) == 0)
+        {
+            <div class="pf-empty-inline">Категорий этого типа пока нет — добавьте первую в форме справа.</div>
+        }
+        else
+        {
+            <div class="table-scroll">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Категория</th>
+                            <th>Тип</th>
+                            <th style="text-align:right">За месяц</th>
+                            <th style="text-align:right">Операций</th>
+                            <th><span class="sr-only">Действия</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in Rows())
+                        {
+                            <tr>
+                                <td>
+                                    <span class="pf-cat-cell">
+                                        <span class="pf-ic sm" style="@Visuals.ToneStyle(Visuals.CategoryTone(row.Category))"><Icon Name="@Visuals.CategoryIcon(row.Category)" /></span>
+                                        <span class="cell-name">@row.Category.Name</span>
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="tag @(row.Category.Type == CategoryType.Income ? "t-active" : "t-unavail")">@(row.Category.Type == CategoryType.Income ? "Доход" : "Расход")</span>
+                                </td>
+                                <td class="cell-price mono">@Fmt.Money(row.MonthTotal, _data.Currency)</td>
+                                <td class="cell-price mono muted">@row.Count</td>
+                                <td class="cell-actions">
+                                    <button type="button" class="icon-btn" aria-label="Изменить @row.Category.Name" @onclick="() => StartEdit(row.Category)"><Icon Name="pen" /></button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <div class="card" style="gap:14px">
+        <div class="card-head" style="margin-bottom:0">
+            <div class="card-title-wrap">
+                <span class="eyebrow">@(_editingId is null ? "Добавить" : "Изменить")</span>
+                <h3 class="card-title">@(_editingId is null ? "Новая категория" : _form.Name)</h3>
+            </div>
+        </div>
+        <EditForm Model="_form" OnSubmit="SaveAsync" style="display:flex;flex-direction:column;gap:14px">
+            <div class="field">
+                <label class="field-label" for="cat-name">Название</label>
+                <input id="cat-name" class="input @(_nameError is null ? null : "is-invalid")" maxlength="100" placeholder="Например, Подписки" @bind="_form.Name" />
+                @if (_nameError is not null)
+                {
+                    <span class="field-error">@_nameError</span>
+                }
+            </div>
+            <div class="field">
+                <span class="field-label">Тип</span>
+                <div class="tabs pills full" role="tablist">
+                    <span class="tab @(_form.Type == CategoryType.Expense ? "is-active" : null)" role="tab" @onclick="() => _form.Type = CategoryType.Expense">Расход</span>
+                    <span class="tab @(_form.Type == CategoryType.Income ? "is-active" : null)" role="tab" @onclick="() => _form.Type = CategoryType.Income">Доход</span>
                 </div>
             </div>
+            <div class="field">
+                <span class="field-label">Иконка</span>
+                <div class="pf-icon-pick">
+                    @foreach (var option in Visuals.CategoryIcons)
+                    {
+                        var selected = option.Icon == _form.Icon;
+                        <button type="button" class="pf-ic @(selected ? "is-active" : null)" style="@(selected ? Visuals.ToneStyle(option.Tone) : null)"
+                                aria-label="Иконка @option.Icon" aria-pressed="@(selected ? "true" : "false")" @onclick="() => _form.Icon = option.Icon">
+                            <Icon Name="@option.Icon" />
+                        </button>
+                    }
+                </div>
+            </div>
+            <button type="submit" class="btn btn--primary btn--block">@(_editingId is null ? "Добавить" : "Сохранить")</button>
             @if (_editingId is not null)
             {
-                <button type="button" class="btn btn-link btn-sm mt-2 p-0" @onclick="CancelEdit">Cancel edit</button>
+                <div style="display:flex;gap:8px">
+                    <button type="button" class="btn btn--ghost" style="flex:1;justify-content:center" @onclick="StartCreate">Отмена</button>
+                    <button type="button" class="btn btn--ghost btn--danger-ghost" style="flex:1;justify-content:center" @onclick="DeleteAsync"><Icon Name="trash" />Удалить</button>
+                </div>
             }
         </EditForm>
     </div>
 </div>
 
-@if (_categories is null)
-{
-    <p class="text-muted">Loading...</p>
-}
-else if (_categories.Count == 0)
-{
-    <div class="empty-state">No categories yet. Add your first one above.</div>
-}
-else
-{
-    <div class="card">
-        <div class="table-responsive">
-            <table class="table align-middle mb-0">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Type</th>
-                        <th class="text-end">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var category in _categories)
-                    {
-                        <tr>
-                            <td>@category.Name</td>
-                            <td>
-                                <span class="badge @(category.Type == CategoryType.Income ? "bg-success" : "bg-danger")">
-                                    @category.Type
-                                </span>
-                            </td>
-                            <td class="text-end">
-                                <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => StartEdit(category)">Edit</button>
-                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteCategoryAsync(category.Id)">Delete</button>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-    </div>
-}
-
 @code {
-    private List<Category>? _categories;
+    private record Row(Category Category, decimal MonthTotal, int Count);
+
+    private FinanceSnapshot? _data;
+    private CategoryType _tab = CategoryType.Expense;
+    private DateOnly _monthFrom, _monthTo;
+
     private Guid? _editingId;
-    private CategoryFormModel _formModel = new();
+    private CategoryForm _form = new();
+    private string? _nameError;
 
     protected override async Task OnInitializedAsync()
     {
+        AppState.DataChanged += OnDataChanged;
+        var today = FinanceSnapshot.Today;
+        (_monthFrom, _monthTo) = FinanceSnapshot.MonthRange(today.Year, today.Month);
         await LoadAsync();
     }
 
-    private async Task LoadAsync()
+    private async Task LoadAsync() => _data = await DataService.LoadAsync();
+
+    private int CountOf(CategoryType type) => _data?.Categories.Count(c => c.Type == type) ?? 0;
+
+    private IEnumerable<Row> Rows()
     {
-        _categories = await CategoryService.GetAllAsync();
+        var month = _data!.Between(_monthFrom, _monthTo).ToList();
+        return _data.Categories
+            .Where(c => c.Type == _tab)
+            .Select(c => new Row(
+                c,
+                month.Where(t => t.CategoryId == c.Id).Sum(t => t.Amount),
+                _data.Live.Count(t => t.CategoryId == c.Id)))
+            .OrderByDescending(r => r.MonthTotal)
+            .ThenBy(r => r.Category.Name);
+    }
+
+    private void StartCreate()
+    {
+        _editingId = null;
+        _nameError = null;
+        _form = new CategoryForm { Type = _tab };
     }
 
     private void StartEdit(Category category)
     {
         _editingId = category.Id;
-        _formModel = new CategoryFormModel
+        _nameError = null;
+        _form = new CategoryForm { Name = category.Name, Type = category.Type, Icon = category.Icon ?? "dots" };
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_form.Name))
         {
-            Name = category.Name,
-            Type = category.Type,
-            Icon = category.Icon,
-            Color = category.Color
-        };
-    }
+            _nameError = "Укажите название";
+            return;
+        }
 
-    private void CancelEdit()
-    {
-        _editingId = null;
-        _formModel = new CategoryFormModel();
-    }
+        var name = _form.Name.Trim();
+        var color = Visuals.ToneFor(_form.Icon);
 
-    private async Task SaveCategoryAsync()
-    {
         if (_editingId is { } id)
         {
-            await CategoryService.UpdateAsync(id, _formModel.Name, _formModel.Type, _formModel.Icon, _formModel.Color);
+            await CategoryService.UpdateAsync(id, name, _form.Type, _form.Icon, color);
         }
         else
         {
-            await CategoryService.CreateAsync(_formModel.Name, _formModel.Type, _formModel.Icon, _formModel.Color);
+            await CategoryService.CreateAsync(name, _form.Type, _form.Icon, color);
         }
 
-        CancelEdit();
-        await LoadAsync();
+        _tab = _form.Type;
+        StartCreate();
+        AppState.NotifyDataChanged();
     }
 
-    private async Task DeleteCategoryAsync(Guid id)
+    private async Task DeleteAsync()
     {
-        if (_editingId == id)
+        if (_editingId is { } id)
         {
-            CancelEdit();
+            await CategoryService.DeleteAsync(id);
         }
 
-        await CategoryService.DeleteAsync(id);
-        await LoadAsync();
+        StartCreate();
+        AppState.NotifyDataChanged();
     }
 
-    private class CategoryFormModel
+    private void OnDataChanged() => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => AppState.DataChanged -= OnDataChanged;
+
+    private class CategoryForm
     {
         public string Name { get; set; } = string.Empty;
         public CategoryType Type { get; set; } = CategoryType.Expense;
-        public string? Icon { get; set; }
-        public string? Color { get; set; }
+        public string Icon { get; set; } = "cart";
     }
 }

@@ -1,0 +1,252 @@
+@* Global create/edit dialog for transactions, opened via AppState.OpenTransactionEditor
+   from the topbar button, the mobile FAB or by clicking a transaction row. *@
+@implements IDisposable
+@inject AppState AppState
+@inject LocalAccountService AccountService
+@inject LocalCategoryService CategoryService
+@inject LocalTransactionService TransactionService
+@inject PreferencesService Preferences
+@inject NavigationManager Navigation
+
+<Modal Open="_open" Title="@(_editing is null ? "Новая операция" : "Операция")" OnClose="Close">
+    <EditForm Model="_form" OnSubmit="SaveAsync">
+        <div class="modal-body">
+            @if (_accounts.Count == 0)
+            {
+                <div class="field-help" style="font-size:13px">
+                    Сначала добавьте счёт — операции всегда привязаны к счёту.
+                </div>
+                <button type="button" class="btn btn--primary" style="align-self:flex-start" @onclick='() => GoTo("accounts")'>
+                    <Icon Name="plus" />Добавить счёт
+                </button>
+            }
+            else
+            {
+                <div class="tabs pills full" role="tablist">
+                    <span class="tab @(_form.Type == TransactionType.Expense ? "is-active" : null)" role="tab" @onclick="() => SetType(TransactionType.Expense)">Расход</span>
+                    <span class="tab @(_form.Type == TransactionType.Income ? "is-active" : null)" role="tab" @onclick="() => SetType(TransactionType.Income)">Доход</span>
+                </div>
+
+                <div class="form-grid">
+                    <div class="field">
+                        <label class="field-label" for="tx-amount">Сумма</label>
+                        <div class="input-group">
+                            <span class="addon">@SelectedCurrency</span>
+                            <input id="tx-amount" class="input @(_errors.ContainsKey("amount") ? "is-invalid" : null)" type="number"
+                                   step="0.01" min="0" inputmode="decimal" placeholder="0.00" @bind="_form.Amount" />
+                        </div>
+                        @if (_errors.TryGetValue("amount", out var amountError))
+                        {
+                            <span class="field-error">@amountError</span>
+                        }
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="tx-date">Дата</label>
+                        <input id="tx-date" class="input" type="date" @bind="_form.Date" />
+                    </div>
+
+                    <div class="field span-2 only-mobile" style="flex-direction:column">
+                        <span class="field-label">Категория</span>
+                        <div class="pf-chips">
+                            @foreach (var category in TypeCategories)
+                            {
+                                <button type="button" class="badge @(category.Id == _form.CategoryId ? "primary" : null)" @onclick="() => _form.CategoryId = category.Id">@category.Name</button>
+                            }
+                        </div>
+                    </div>
+                    <div class="field only-desktop">
+                        <label class="field-label" for="tx-category">Категория</label>
+                        <select id="tx-category" class="select @(_errors.ContainsKey("category") ? "is-invalid" : null)" @bind="_form.CategoryId">
+                            @foreach (var category in TypeCategories)
+                            {
+                                <option value="@category.Id">@category.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="tx-account">Счёт</label>
+                        <select id="tx-account" class="select" @bind="_form.AccountId">
+                            @foreach (var account in _accounts)
+                            {
+                                <option value="@account.Id">@account.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field span-2">
+                        <label class="field-label" for="tx-note">Заметка</label>
+                        <input id="tx-note" class="input" maxlength="500" placeholder="Например, Korzinka" @bind="_form.Note" />
+                    </div>
+                </div>
+
+                @if (TypeCategories.Count == 0)
+                {
+                    <span class="field-error">
+                        Нет категорий типа «@(_form.Type == TransactionType.Income ? "Доход" : "Расход")».
+                        <a href="categories" @onclick="Close">Добавить категорию</a>
+                    </span>
+                }
+                else if (_errors.TryGetValue("category", out var categoryError))
+                {
+                    <span class="field-error">@categoryError</span>
+                }
+
+                <span class="field-help pf-modal-note"><Icon Name="sync" />Сохранится локально и отправится при появлении сети</span>
+            }
+        </div>
+        <div class="modal-foot">
+            @if (_editing is not null)
+            {
+                <button type="button" class="btn btn--ghost btn--danger-ghost pf-foot-start" @onclick="DeleteAsync"><Icon Name="trash" />Удалить</button>
+            }
+            <button type="button" class="btn btn--ghost" @onclick="Close">Отмена</button>
+            @if (_accounts.Count > 0)
+            {
+                <button type="submit" class="btn btn--primary" disabled="@_busy">Сохранить</button>
+            }
+        </div>
+    </EditForm>
+</Modal>
+
+@code {
+    private bool _open;
+    private bool _busy;
+    private Transaction? _editing;
+    private List<Account> _accounts = new();
+    private List<Category> _categories = new();
+    private FormModel _form = new();
+    private readonly Dictionary<string, string> _errors = new();
+
+    private List<Category> TypeCategories => _categories.Where(c => (int)c.Type == (int)_form.Type).ToList();
+
+    private string SelectedCurrency => _accounts.FirstOrDefault(a => a.Id == _form.AccountId)?.Currency ?? "USD";
+
+    protected override void OnInitialized() => AppState.TransactionEditorRequested += OnRequested;
+
+    private void OnRequested(Transaction? transaction) => InvokeAsync(() => OpenAsync(transaction));
+
+    private async Task OpenAsync(Transaction? transaction)
+    {
+        _accounts = await AccountService.GetAllAsync();
+        _categories = await CategoryService.GetAllAsync();
+        _errors.Clear();
+        _editing = transaction;
+
+        if (transaction is not null)
+        {
+            _form = new FormModel
+            {
+                Type = transaction.Type,
+                Amount = transaction.Amount,
+                Date = transaction.Date,
+                AccountId = transaction.AccountId,
+                CategoryId = transaction.CategoryId,
+                Note = transaction.Note
+            };
+        }
+        else
+        {
+            var defaultAccountId = await Preferences.GetDefaultAccountIdAsync();
+            _form = new FormModel
+            {
+                AccountId = _accounts.Any(a => a.Id == defaultAccountId) ? defaultAccountId!.Value : _accounts.FirstOrDefault()?.Id ?? Guid.Empty
+            };
+            EnsureCategoryMatchesType();
+        }
+
+        _open = true;
+        StateHasChanged();
+    }
+
+    private void SetType(TransactionType type)
+    {
+        _form.Type = type;
+        EnsureCategoryMatchesType();
+    }
+
+    private void EnsureCategoryMatchesType()
+    {
+        var options = TypeCategories;
+        if (options.All(c => c.Id != _form.CategoryId))
+        {
+            _form.CategoryId = options.FirstOrDefault()?.Id ?? Guid.Empty;
+        }
+    }
+
+    private bool Validate()
+    {
+        _errors.Clear();
+
+        if (_form.Amount is not > 0)
+        {
+            _errors["amount"] = "Введите сумму больше нуля";
+        }
+
+        if (TypeCategories.All(c => c.Id != _form.CategoryId))
+        {
+            _errors["category"] = "Выберите категорию";
+        }
+
+        return _errors.Count == 0;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!Validate())
+        {
+            return;
+        }
+
+        _busy = true;
+        var note = string.IsNullOrWhiteSpace(_form.Note) ? null : _form.Note.Trim();
+        var amount = Math.Round(_form.Amount!.Value, 2);
+
+        if (_editing is not null)
+        {
+            await TransactionService.UpdateAsync(_editing.Id, _form.AccountId, _form.CategoryId, _form.Type, amount, _form.Date, note);
+        }
+        else
+        {
+            await TransactionService.CreateAsync(_form.AccountId, _form.CategoryId, _form.Type, amount, _form.Date, note);
+        }
+
+        _busy = false;
+        Close();
+        AppState.NotifyDataChanged();
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_editing is null)
+        {
+            return;
+        }
+
+        await TransactionService.DeleteAsync(_editing.Id);
+        Close();
+        AppState.NotifyDataChanged();
+    }
+
+    private void GoTo(string path)
+    {
+        Close();
+        Navigation.NavigateTo(path);
+    }
+
+    private void Close()
+    {
+        _open = false;
+        _editing = null;
+    }
+
+    public void Dispose() => AppState.TransactionEditorRequested -= OnRequested;
+
+    private class FormModel
+    {
+        public TransactionType Type { get; set; } = TransactionType.Expense;
+        public decimal? Amount { get; set; }
+        public DateOnly Date { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public Guid AccountId { get; set; }
+        public Guid CategoryId { get; set; }
+        public string? Note { get; set; }
+    }
+}

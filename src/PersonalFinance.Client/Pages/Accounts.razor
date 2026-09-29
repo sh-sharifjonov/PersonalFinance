@@ -1,141 +1,210 @@
 @page "/accounts"
 @attribute [Authorize]
-@using PersonalFinance.Client.Services
-@using PersonalFinance.Domain.Entities
+@implements IDisposable
+@inject FinanceDataService DataService
 @inject LocalAccountService AccountService
+@inject AppState AppState
 
-<PageTitle>Accounts</PageTitle>
+<PageTitle>Счета · Финансы</PageTitle>
 
-<h1 class="h3 mb-3">Accounts</h1>
+<PageTop Title="Счета">
+    <button type="button" class="btn btn--primary" @onclick="() => OpenEditor(null)"><Icon Name="plus" /><span class="pf-hide-mobile">Новый счёт</span></button>
+</PageTop>
 
-<div class="card mb-4">
-    <div class="card-body">
-        <h2 class="h6 text-uppercase text-muted mb-3">@(_editingId is null ? "Add account" : "Edit account")</h2>
-        <EditForm Model="_formModel" OnValidSubmit="SaveAccountAsync">
-            <div class="row g-2 align-items-end">
-                <div class="col-md-5">
-                    <label class="form-label">Name</label>
-                    <input class="form-control" @bind="_formModel.Name" required />
+<div class="pf-body">
+    @if (_data is null)
+    {
+        <div class="pf-empty-inline">Загрузка…</div>
+    }
+    else if (_data.Accounts.Count == 0)
+    {
+        <EmptyState IconName="wallet" Title="Счетов пока нет" Text="Счёт — это карта, наличные или копилка. Начальный остаток можно указать сразу.">
+            <button type="button" class="btn btn--primary" @onclick="() => OpenEditor(null)"><Icon Name="plus" />Новый счёт</button>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="kpi-grid pf-kpi-3">
+            @for (var i = 0; i < _data.Accounts.Count; i++)
+            {
+                var account = _data.Accounts[i];
+                var tone = Visuals.AccountTone(i);
+                var balance = _data.Balance(account);
+                var count = _data.Live.Count(t => t.AccountId == account.Id);
+                <div class="kpi-card @KpiClass(tone)">
+                    <div class="kpi-top">
+                        <div class="kpi-identity">
+                            <span class="kpi-icon @tone"><Icon Name="@Visuals.AccountIcon(i)" Class="@null" /></span>
+                            <span class="kpi-label">@account.Name</span>
+                        </div>
+                        <button type="button" class="icon-btn" aria-label="Изменить счёт @account.Name" @onclick="() => OpenEditor(account)"><Icon Name="dots" /></button>
+                    </div>
+                    <div class="kpi-value num pf-kpi-md">@Fmt.Whole(balance, account.Currency)<sup>@Fmt.Cents(balance, account.Currency)</sup></div>
+                    <div class="kpi-compare">
+                        @account.Currency<span class="sep">·</span>@Fmt.Operations(count)<span class="sep">·</span>старт <strong>@Fmt.Money(account.InitialBalance, account.Currency, cents: false)</strong>
+                    </div>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label">Currency</label>
-                    <input class="form-control" @bind="_formModel.Currency" required />
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-head">
+                <div class="card-title-wrap"><span class="eyebrow">@Fmt.MonthName(_today.Month)</span><h3 class="card-title">Движение по счетам</h3></div>
+            </div>
+            <div class="table-scroll">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Счёт</th>
+                            <th style="text-align:right">Поступления</th>
+                            <th style="text-align:right">Списания</th>
+                            <th style="text-align:right">Баланс</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var account in _data.Accounts)
+                        {
+                            var month = _data.Between(_monthFrom, _monthTo).Where(t => t.AccountId == account.Id).ToList();
+                            <tr>
+                                <td class="cell-name">@account.Name</td>
+                                <td class="cell-price mono pos">+@Fmt.Money(FinanceSnapshot.Income(month), account.Currency)</td>
+                                <td class="cell-price mono">−@Fmt.Money(FinanceSnapshot.Expense(month), account.Currency)</td>
+                                <td class="cell-price mono">@Fmt.Money(_data.Balance(account), account.Currency)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+<Modal Open="_editorOpen" Title="@(_editingId is null ? "Новый счёт" : "Счёт")" OnClose="CloseEditor">
+    <EditForm Model="_form" OnSubmit="SaveAsync">
+        <div class="modal-body">
+            <div class="field">
+                <label class="field-label" for="acc-name">Название <span class="req">*</span></label>
+                <input id="acc-name" class="input @(_nameError is null ? null : "is-invalid")" maxlength="100" placeholder="Например, Карта Visa" @bind="_form.Name" />
+                @if (_nameError is not null)
+                {
+                    <span class="field-error">@_nameError</span>
+                }
+            </div>
+            <div class="form-grid">
+                <div class="field">
+                    <label class="field-label" for="acc-currency">Валюта</label>
+                    <select id="acc-currency" class="select" @bind="_form.Currency">
+                        @foreach (var currency in CurrencyOptions)
+                        {
+                            <option value="@currency">@currency</option>
+                        }
+                    </select>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label">Initial balance</label>
-                    <input type="number" step="0.01" class="form-control" @bind="_formModel.InitialBalance" />
-                </div>
-                <div class="col-md-1 d-grid">
-                    <button type="submit" class="btn btn-primary">@(_editingId is null ? "Add" : "Save")</button>
+                <div class="field">
+                    <label class="field-label" for="acc-initial">Начальный остаток</label>
+                    <input id="acc-initial" class="input" type="number" step="0.01" inputmode="decimal" @bind="_form.InitialBalance" />
                 </div>
             </div>
             @if (_editingId is not null)
             {
-                <button type="button" class="btn btn-link btn-sm mt-2 p-0" @onclick="CancelEdit">Cancel edit</button>
+                <span class="field-help">Удаление скроет счёт и его операции из итогов на всех устройствах.</span>
             }
-        </EditForm>
-    </div>
-</div>
-
-@if (_accounts is null)
-{
-    <p class="text-muted">Loading...</p>
-}
-else if (_accounts.Count == 0)
-{
-    <div class="empty-state">No accounts yet. Add your first one above.</div>
-}
-else
-{
-    <div class="card">
-        <div class="table-responsive">
-            <table class="table align-middle mb-0">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Currency</th>
-                        <th class="text-end">Initial balance</th>
-                        <th class="text-end">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var account in _accounts)
-                    {
-                        <tr>
-                            <td>@account.Name</td>
-                            <td>@account.Currency</td>
-                            <td class="text-end">@account.InitialBalance.ToString("N2")</td>
-                            <td class="text-end">
-                                <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => StartEdit(account)">Edit</button>
-                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAccountAsync(account.Id)">Delete</button>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
         </div>
-    </div>
-}
+        <div class="modal-foot">
+            @if (_editingId is not null)
+            {
+                <button type="button" class="btn btn--ghost btn--danger-ghost pf-foot-start" @onclick="DeleteAsync"><Icon Name="trash" />Удалить</button>
+            }
+            <button type="button" class="btn btn--ghost" @onclick="CloseEditor">Отмена</button>
+            <button type="submit" class="btn btn--primary">Сохранить</button>
+        </div>
+    </EditForm>
+</Modal>
 
 @code {
-    private List<Account>? _accounts;
+    private static readonly string[] Currencies = { "USD", "EUR", "UZS", "RUB", "KZT", "GBP" };
+
+    private FinanceSnapshot? _data;
+    private DateOnly _today, _monthFrom, _monthTo;
+
+    private bool _editorOpen;
     private Guid? _editingId;
-    private AccountFormModel _formModel = new();
+    private AccountForm _form = new();
+    private string? _nameError;
+
+    private IEnumerable<string> CurrencyOptions =>
+        Currencies.Contains(_form.Currency) ? Currencies : Currencies.Prepend(_form.Currency);
 
     protected override async Task OnInitializedAsync()
     {
+        AppState.DataChanged += OnDataChanged;
+        _today = FinanceSnapshot.Today;
+        (_monthFrom, _monthTo) = FinanceSnapshot.MonthRange(_today.Year, _today.Month);
         await LoadAsync();
     }
 
-    private async Task LoadAsync()
+    private async Task LoadAsync() => _data = await DataService.LoadAsync();
+
+    // adminator.css only ships KPI accent stripes for these four tones.
+    private static string KpiClass(string tone) =>
+        tone is "primary" or "success" or "danger" or "purple" ? $"c-{tone}" : "c-primary";
+
+    private void OpenEditor(Account? account)
     {
-        _accounts = await AccountService.GetAllAsync();
+        _editingId = account?.Id;
+        _nameError = null;
+        _form = account is null
+            ? new AccountForm { Currency = _data?.Currency ?? "USD" }
+            : new AccountForm { Name = account.Name, Currency = account.Currency, InitialBalance = account.InitialBalance };
+        _editorOpen = true;
     }
 
-    private void StartEdit(Account account)
+    private void CloseEditor() => _editorOpen = false;
+
+    private async Task SaveAsync()
     {
-        _editingId = account.Id;
-        _formModel = new AccountFormModel
+        if (string.IsNullOrWhiteSpace(_form.Name))
         {
-            Name = account.Name,
-            Currency = account.Currency,
-            InitialBalance = account.InitialBalance
-        };
-    }
+            _nameError = "Укажите название счёта";
+            return;
+        }
 
-    private void CancelEdit()
-    {
-        _editingId = null;
-        _formModel = new AccountFormModel();
-    }
+        var name = _form.Name.Trim();
+        var initial = Math.Round(_form.InitialBalance, 2);
 
-    private async Task SaveAccountAsync()
-    {
         if (_editingId is { } id)
         {
-            await AccountService.UpdateAsync(id, _formModel.Name, _formModel.Currency, _formModel.InitialBalance);
+            await AccountService.UpdateAsync(id, name, _form.Currency, initial);
         }
         else
         {
-            await AccountService.CreateAsync(_formModel.Name, _formModel.Currency, _formModel.InitialBalance);
+            await AccountService.CreateAsync(name, _form.Currency, initial);
         }
 
-        CancelEdit();
-        await LoadAsync();
+        CloseEditor();
+        AppState.NotifyDataChanged();
     }
 
-    private async Task DeleteAccountAsync(Guid id)
+    private async Task DeleteAsync()
     {
-        if (_editingId == id)
+        if (_editingId is { } id)
         {
-            CancelEdit();
+            await AccountService.DeleteAsync(id);
         }
 
-        await AccountService.DeleteAsync(id);
-        await LoadAsync();
+        CloseEditor();
+        AppState.NotifyDataChanged();
     }
 
-    private class AccountFormModel
+    private void OnDataChanged() => InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => AppState.DataChanged -= OnDataChanged;
+
+    private class AccountForm
     {
         public string Name { get; set; } = string.Empty;
         public string Currency { get; set; } = "USD";

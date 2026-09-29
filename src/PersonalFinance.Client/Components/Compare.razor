@@ -1,0 +1,25 @@
+@* KPI footer: "▲ +8.0% · к августу". InvertTone for metrics where going down is good (expenses). *@
+<div class="kpi-compare">
+    @if (Previous > 0)
+    {
+        var change = (Current - Previous) / Previous * 100;
+        var good = (change >= 0) != InvertTone;
+        <span class="@(good ? "up" : "down")">@(change >= 0 ? "▲" : "▼")</span><strong>@Fmt.SignedPercent(change)</strong><span class="sep">·</span><span>@Label</span>
+    }
+    else
+    {
+        <span>@(Fallback ?? "нет данных для сравнения")</span>
+    }
+</div>
+
+@code {
+    [Parameter] public decimal Current { get; set; }
+
+    [Parameter] public decimal Previous { get; set; }
+
+    [Parameter] public string Label { get; set; } = string.Empty;
+
+    [Parameter] public bool InvertTone { get; set; }
+
+    [Parameter] public string? Fallback { get; set; }
+}

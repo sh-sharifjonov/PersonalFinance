@@ -1,0 +1,48 @@
+@inject AppState AppState
+
+<div class="pf-row is-clickable" role="button" tabindex="0" @onclick="Edit" @onkeydown="OnKeyDown">
+    <span class="pf-ic" style="@Visuals.ToneStyle(Visuals.CategoryTone(_category))"><Icon Name="@Visuals.CategoryIcon(_category)" /></span>
+    <span class="pf-row-text">
+        <span class="pf-t">@Title</span>
+        <span class="pf-s">@Subtitle</span>
+    </span>
+    <span class="pf-row-end">
+        @if (ShowPending && Data.IsPending(Transaction))
+        {
+            <span class="badge warning dot" title="Ещё не отправлено на сервер">Ожидает</span>
+        }
+        <span class="pf-amt @(Transaction.Type == TransactionType.Income ? "pos" : "neg")">
+            @Fmt.Signed(Transaction.Amount, Transaction.Type, Data.CurrencyOf(Transaction))
+        </span>
+    </span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Transaction Transaction { get; set; } = default!;
+
+    [Parameter, EditorRequired] public FinanceSnapshot Data { get; set; } = default!;
+
+    /// <summary>Subtitle shows "Category · date" instead of "Category · account".</summary>
+    [Parameter] public bool ShowDate { get; set; }
+
+    [Parameter] public bool ShowPending { get; set; }
+
+    private Category? _category;
+
+    protected override void OnParametersSet() => _category = Data.CategoryOf(Transaction);
+
+    private string Title => string.IsNullOrWhiteSpace(Transaction.Note) ? _category?.Name ?? "Без категории" : Transaction.Note!;
+
+    private string Subtitle => (_category?.Name ?? "Без категории") + " · " +
+        (ShowDate ? Fmt.ShortDate(Transaction.Date) : Data.AccountOf(Transaction)?.Name ?? "—");
+
+    private void Edit() => AppState.OpenTransactionEditor(Transaction);
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or " ")
+        {
+            Edit();
+        }
+    }
+}

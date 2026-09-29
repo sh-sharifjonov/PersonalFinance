@@ -1,46 +1,75 @@
 @inherits LayoutComponentBase
-@using PersonalFinance.Client.Auth
-@inject AuthService AuthService
-@inject NavigationManager Navigation
+@using System.Security.Claims
+@using PersonalFinance.Client.Sync
+@implements IDisposable
+@inject AppState AppState
+@inject SyncService Sync
 
-<nav class="navbar navbar-expand-md navbar-dark bg-primary sticky-top shadow-sm">
-    <div class="container">
-        <a class="navbar-brand" href="">💰 Personal Finance</a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu" aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navMenu">
-            <AuthorizeView>
-                <Authorized>
-                    <ul class="navbar-nav me-auto mb-2 mb-md-0">
-                        <li class="nav-item"><NavLink class="nav-link" href="transactions" Match="NavLinkMatch.All">Transactions</NavLink></li>
-                        <li class="nav-item"><NavLink class="nav-link" href="accounts">Accounts</NavLink></li>
-                        <li class="nav-item"><NavLink class="nav-link" href="categories">Categories</NavLink></li>
-                    </ul>
-                    <div class="d-flex align-items-center gap-3">
-                        <span class="text-white-50 small d-none d-md-inline">@context.User.Identity?.Name</span>
-                        <button type="button" class="btn btn-outline-light btn-sm" @onclick="LogoutAsync">Log out</button>
-                    </div>
-                </Authorized>
-                <NotAuthorized>
-                    <ul class="navbar-nav ms-auto align-items-md-center gap-md-2">
-                        <li class="nav-item"><NavLink class="nav-link" href="login">Log in</NavLink></li>
-                        <li class="nav-item"><NavLink class="btn btn-light btn-sm" href="register">Register</NavLink></li>
-                    </ul>
-                </NotAuthorized>
-            </AuthorizeView>
+<AuthorizeView>
+    <Authorized>
+        <div class="shell">
+            <aside class="d-sidebar">
+                <div class="brand">
+                    <span class="brand-logo"><svg viewBox="0 0 36 36"><use href="#i-logo"></use></svg></span>
+                    <span class="brand-text">
+                        <span class="brand-name" style="display:block">Финансы</span>
+                        <span class="brand-tag">PERSONAL</span>
+                    </span>
+                </div>
+                <nav class="nav-section">
+                    <span class="nav-label">Меню</span>
+                    <NavLink class="nav-link" ActiveClass="is-active" href="" Match="NavLinkMatch.All"><Icon Name="grid" Class="@null" /><span>Обзор</span></NavLink>
+                    <NavLink class="nav-link" ActiveClass="is-active" href="transactions">
+                        <Icon Name="list" Class="@null" /><span>Операции</span>
+                        @if (Sync.PendingCount > 0)
+                        {
+                            <span class="nav-badge new" title="Изменений в очереди на отправку">@Sync.PendingCount</span>
+                        }
+                    </NavLink>
+                    <NavLink class="nav-link" ActiveClass="is-active" href="accounts"><Icon Name="wallet" Class="@null" /><span>Счета</span></NavLink>
+                    <NavLink class="nav-link" ActiveClass="is-active" href="categories"><Icon Name="tag" Class="@null" /><span>Категории</span></NavLink>
+                    <NavLink class="nav-link" ActiveClass="is-active" href="reports"><Icon Name="chart" Class="@null" /><span>Отчёты</span></NavLink>
+                    <NavLink class="nav-link" ActiveClass="is-active" href="settings"><Icon Name="gear" Class="@null" /><span>Настройки</span></NavLink>
+                </nav>
+                <div class="sidebar-footer">
+                    <a class="workspace" href="settings">
+                        <span class="workspace-avatar">@Fmt.Initials(context.User.Identity?.Name)</span>
+                        <span class="workspace-text">
+                            <span class="workspace-name" style="display:block">@context.User.Identity?.Name</span>
+                            <span class="workspace-role">@context.User.FindFirst(ClaimTypes.Email)?.Value</span>
+                        </span>
+                    </a>
+                </div>
+            </aside>
+            <main class="main">
+                @Body
+            </main>
         </div>
-    </div>
-</nav>
 
-<div class="page-container">
-    @Body
-</div>
+        <button type="button" class="btn btn--primary pf-fab" aria-label="Новая операция" @onclick="() => AppState.OpenTransactionEditor()">
+            <Icon Name="plus" />
+        </button>
+        <nav class="pf-tabbar" aria-label="Разделы">
+            <NavLink class="pf-tab" ActiveClass="is-active" href="" Match="NavLinkMatch.All"><Icon Name="grid" />Обзор</NavLink>
+            <NavLink class="pf-tab" ActiveClass="is-active" href="transactions"><Icon Name="list" />Операции</NavLink>
+            <NavLink class="pf-tab" ActiveClass="is-active" href="accounts"><Icon Name="wallet" />Счета</NavLink>
+            <NavLink class="pf-tab" ActiveClass="is-active" href="reports"><Icon Name="chart" />Отчёты</NavLink>
+            <NavLink class="pf-tab" ActiveClass="is-active" href="settings"><Icon Name="dots" />Ещё</NavLink>
+        </nav>
+
+        <TransactionEditor />
+    </Authorized>
+    <NotAuthorized>
+        <main class="pf-auth">
+            @Body
+        </main>
+    </NotAuthorized>
+</AuthorizeView>
 
 @code {
-    private async Task LogoutAsync()
-    {
-        await AuthService.LogoutAsync();
-        Navigation.NavigateTo("/");
-    }
+    protected override void OnInitialized() => Sync.StateChanged += OnSyncStateChanged;
+
+    private void OnSyncStateChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Sync.StateChanged -= OnSyncStateChanged;
 }

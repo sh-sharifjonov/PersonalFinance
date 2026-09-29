@@ -9,9 +9,13 @@
             <FocusOnNavigate RouteData="@routeData" Selector="h1" />
         </Found>
         <NotFound>
-            <PageTitle>Not found</PageTitle>
+            <PageTitle>Не найдено · Финансы</PageTitle>
             <LayoutView Layout="@typeof(MainLayout)">
-                <p role="alert">Sorry, there's nothing at this address.</p>
+                <div class="pf-body" style="width:100%;max-width:640px;margin:0 auto">
+                    <EmptyState IconName="alert" Title="Такой страницы нет" Text="Возможно, ссылка устарела.">
+                        <a class="btn btn--primary" href="">На главную</a>
+                    </EmptyState>
+                </div>
             </LayoutView>
         </NotFound>
     </Router>
